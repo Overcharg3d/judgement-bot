@@ -1,1 +1,14 @@
-.
+{
+  "name": "court-bot",
+  "version": "1.0.0",
+  "description": "Discord Court Bot",
+  "main": "court-bot.js",
+  "scripts": {
+    "start": "node court-bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "pg": "^8.13.3",
+    "express": "^4.21.2"
+  }
+}
