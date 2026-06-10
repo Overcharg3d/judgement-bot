@@ -1,10 +1,10 @@
 {
-  "name": "court-bot",
+  "name": "judgement",
   "version": "1.0.0",
-  "description": "Discord Court Bot",
-  "main": "court-bot.js",
+  "description": "Discord Judgement Bot",
+  "main": "index.js",
   "scripts": {
-    "start": "node court-bot.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
