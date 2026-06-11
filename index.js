@@ -17,9 +17,6 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// Load commands from part 2
-const registerCommands2 = require('./commands.js');
-
 // --- Web Server ---
 const app = express();
 app.get('/', (req, res) => res.send('Court Bot is Live'));
@@ -986,6 +983,9 @@ module.exports.SETUP_STEPS_2 = SETUP_STEPS_2;
 // ============================================================
 // --- READY ---
 // ============================================================
+
+// Load commands from part 2
+const registerCommands2 = require('./commands.js');
 
 client.once('ready', async () => {
     console.log(`Court Bot online as: ${client.user.tag}`);
