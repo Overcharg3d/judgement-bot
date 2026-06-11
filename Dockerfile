@@ -2,5 +2,6 @@ FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
-COPY index.js .
+# The line below now copies EVERYTHING in your folder
+COPY . .
 CMD ["node", "index.js"]
