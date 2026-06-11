@@ -1845,10 +1845,6 @@ client.on('messageCreate', async message => {
     const updated = await getCaseById(c.id);
     await updatePinnedEmbed(updated);
 });
-// ============================================================
-// courtbot.js - PART 2 OF 2  (paste directly after Part 1)
-// Lawyer, jury, evidence, info/stats, and admin override commands.
-// ============================================================
 
 async function handleCommands2(interaction, cmd, guildId, isAdmin) {
 
