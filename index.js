@@ -1,11 +1,5 @@
 'use strict';
 
-// ============================================================
-// index.js - Court Bot Part 1
-// Core infrastructure, DB, helpers, setup wizard,
-// case filing/management, judge commands, and punishment engine
-// ============================================================
-
 const {
     Client, GatewayIntentBits, ApplicationCommandOptionType,
     EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder,
@@ -14,10 +8,8 @@ const {
 } = require('discord.js');
 const { Pool } = require('pg');
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 
-// --- Web Server ---
+// --- Web Server (keep-alive) ---
 const app = express();
 app.get('/', (req, res) => res.send('Court Bot is Live'));
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -39,8 +31,6 @@ const client = new Client({
 const pool = new Pool({ connectionString: process.env.DB_URL, ssl: { rejectUnauthorized: false } });
 const OWNER_ID = process.env.OWNER_ID || 'YOUR_DISCORD_ID_HERE';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-module.exports = { client, pool, OWNER_ID, delay };
 
 // --- Colors ---
 const Colors = {
@@ -74,12 +64,8 @@ const STATUS_COLORS = {
 
 const MAX_JURY = 10;
 
-module.exports.Colors = Colors;
-module.exports.STATUS_COLORS = STATUS_COLORS;
-module.exports.MAX_JURY = MAX_JURY;
-
 // ============================================================
-// --- EMBED HELPERS ---
+// EMBED HELPERS
 // ============================================================
 
 function simpleEmbed(color, title, description) {
@@ -92,7 +78,7 @@ function infoEmbed(color, title, lines, thumbnail) {
     return e;
 }
 
-function errEmbed(msg) { return simpleEmbed(Colors.error, 'Error', msg); }
+function errEmbed(msg) { return simpleEmbed(Colors.error, '❌ Error', msg); }
 
 function ts(date) {
     let t = date ? new Date(date).getTime() : Date.now();
@@ -100,18 +86,13 @@ function ts(date) {
     return `<t:${Math.floor(t / 1000)}:F>`;
 }
 
-module.exports.simpleEmbed = simpleEmbed;
-module.exports.infoEmbed = infoEmbed;
-module.exports.errEmbed = errEmbed;
-module.exports.ts = ts;
-
 // ============================================================
-// --- PARSE HELPERS ---
+// PARSE HELPERS
 // ============================================================
 
 function parseDuration(str) {
     if (!str) return null;
-    if (str.toLowerCase() === 'perm') return -1; // permanent sentinel
+    if (str.toLowerCase() === 'perm') return -1;
     const match = str.match(/^(\d+)(s|m|h|d)$/i);
     if (!match) return null;
     const mult = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
@@ -138,26 +119,21 @@ function formatCaseId(num) {
     return `CASE-${String(num).padStart(3, '0')}`;
 }
 
-module.exports.parseDuration = parseDuration;
-module.exports.msToHuman = msToHuman;
-module.exports.parseIds = parseIds;
-module.exports.formatCaseId = formatCaseId;
-
 // ============================================================
-// --- PAGINATION ---
+// PAGINATION
 // ============================================================
 
 function buildPageButtons(page, maxPages) {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('prev_page').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
-        new ButtonBuilder().setCustomId('next_page').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page === maxPages - 1)
+        new ButtonBuilder().setCustomId('prev_page').setLabel('◀ Previous').setStyle(ButtonStyle.Primary).setDisabled(page === 0),
+        new ButtonBuilder().setCustomId('next_page').setLabel('Next ▶').setStyle(ButtonStyle.Primary).setDisabled(page === maxPages - 1)
     );
 }
 
 function buildDisabledButtons() {
     return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('prev_page').setLabel('Previous').setStyle(ButtonStyle.Primary).setDisabled(true),
-        new ButtonBuilder().setCustomId('next_page').setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(true)
+        new ButtonBuilder().setCustomId('prev_page').setLabel('◀ Previous').setStyle(ButtonStyle.Primary).setDisabled(true),
+        new ButtonBuilder().setCustomId('next_page').setLabel('Next ▶').setStyle(ButtonStyle.Primary).setDisabled(true)
     );
 }
 
@@ -170,7 +146,7 @@ async function paginatedReply(interaction, rows, itemsPerPage, color, title, lin
         const lines = rows.slice(start, start + itemsPerPage).map(lineMapper).join('\n\n');
         const e = new EmbedBuilder()
             .setColor(color)
-            .setTitle(`${title} (Page ${page + 1} of ${maxPages}) - Total: ${rows.length}`)
+            .setTitle(`${title} — Page ${page + 1}/${maxPages} (${rows.length} total)`)
             .setDescription(lines || 'Nothing here.')
             .setTimestamp();
         if (thumbnail) e.setThumbnail(thumbnail);
@@ -186,7 +162,7 @@ async function paginatedReply(interaction, rows, itemsPerPage, color, title, lin
 
     const collector = msg.createMessageComponentCollector({ componentType: ComponentType.Button, time: 300000 });
     collector.on('collect', async (i) => {
-        if (i.user.id !== interaction.user.id) return i.reply({ content: 'Not for you!', ephemeral: true });
+        if (i.user.id !== interaction.user.id) return i.reply({ content: 'Not your pagination!', ephemeral: true });
         if (i.customId === 'prev_page') currentPage--;
         if (i.customId === 'next_page') currentPage++;
         await i.update({ embeds: [generateEmbed(currentPage)], components: [buildPageButtons(currentPage, maxPages)] });
@@ -196,16 +172,14 @@ async function paginatedReply(interaction, rows, itemsPerPage, color, title, lin
     });
 }
 
-module.exports.paginatedReply = paginatedReply;
-
 // ============================================================
-// --- CONFIRMATION DIALOG ---
+// CONFIRMATION DIALOG
 // ============================================================
 
 async function confirm(interaction, title, description) {
-    const embed = simpleEmbed(Colors.warn, title, description);
+    const embed = simpleEmbed(Colors.warn, `⚠️ ${title}`, description);
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('confirm').setLabel('Confirm').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('confirm').setLabel('✅ Confirm').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
     const msg = await interaction.editReply({ embeds: [embed], components: [row] });
@@ -213,12 +187,12 @@ async function confirm(interaction, title, description) {
         const btn = await msg.awaitMessageComponent({
             componentType: ComponentType.Button,
             filter: i => i.user.id === interaction.user.id,
-            time: 10_000
+            time: 15_000
         });
         await btn.deferUpdate();
         if (btn.customId === 'cancel') {
             await interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Cancelled', 'Action cancelled.')], components: [] });
-            setTimeout(() => interaction.deleteReply().catch(() => {}), 2000);
+            setTimeout(() => interaction.deleteReply().catch(() => {}), 3000);
             return false;
         }
         return true;
@@ -228,10 +202,8 @@ async function confirm(interaction, title, description) {
     }
 }
 
-module.exports.confirm = confirm;
-
 // ============================================================
-// --- DB INIT ---
+// DB INIT
 // ============================================================
 
 async function initDB() {
@@ -344,7 +316,7 @@ async function initDB() {
 }
 
 // ============================================================
-// --- LOG ACTION ---
+// LOG ACTION
 // ============================================================
 
 async function logAction(userId, action, reason, executorId) {
@@ -354,10 +326,8 @@ async function logAction(userId, action, reason, executorId) {
     ).catch(() => {});
 }
 
-module.exports.logAction = logAction;
-
 // ============================================================
-// --- GUILD CONFIG HELPERS ---
+// GUILD CONFIG HELPERS
 // ============================================================
 
 async function getConfig(guildId) {
@@ -382,12 +352,8 @@ function resolveChannelName(format, caseNum, defendantId) {
         .substring(0, 100);
 }
 
-module.exports.getConfig = getConfig;
-module.exports.ensureConfig = ensureConfig;
-module.exports.resolveChannelName = resolveChannelName;
-
 // ============================================================
-// --- CASE HELPERS ---
+// CASE HELPERS
 // ============================================================
 
 async function getActiveCases(guildId) {
@@ -413,16 +379,19 @@ async function getJuryMembers(caseId) {
     return rows;
 }
 
-async function resolveCase(guildId, input) {
+// resolveCase: searches active cases first, then falls back to any case by number
+async function resolveCase(guildId, input, allowClosed = false) {
     const numMatch = input.match(/(\d+)/);
     if (numMatch) {
         const c = await getCaseByNumber(guildId, parseInt(numMatch[1]));
-        if (c) return c;
+        if (c && (allowClosed || !['CLOSED','CANCELLED','DISMISSED'].includes(c.status))) return c;
+        if (c && allowClosed) return c;
     }
     const ids = parseIds(input);
     if (ids.length) {
+        const statusFilter = allowClosed ? '' : `AND status NOT IN ('CLOSED','CANCELLED','DISMISSED')`;
         const { rows } = await pool.query(
-            `SELECT * FROM cases WHERE guild_id = $1 AND (prosecutor_id = $2 OR defendant_id = $2) AND status NOT IN ('CLOSED','CANCELLED','DISMISSED') ORDER BY filed_at DESC LIMIT 1`,
+            `SELECT * FROM cases WHERE guild_id = $1 AND (prosecutor_id = $2 OR defendant_id = $2) ${statusFilter} ORDER BY filed_at DESC LIMIT 1`,
             [guildId, ids[0]]
         );
         if (rows[0]) return rows[0];
@@ -430,14 +399,8 @@ async function resolveCase(guildId, input) {
     return null;
 }
 
-module.exports.getActiveCases = getActiveCases;
-module.exports.getCaseById = getCaseById;
-module.exports.getCaseByNumber = getCaseByNumber;
-module.exports.getJuryMembers = getJuryMembers;
-module.exports.resolveCase = resolveCase;
-
 // ============================================================
-// --- ACTIVE ROLE CONFLICT CHECKS ---
+// ACTIVE ROLE CONFLICT CHECKS
 // ============================================================
 
 async function isJudgeOnActiveCase(guildId, userId) {
@@ -465,55 +428,57 @@ async function isJurorOnActiveCase(guildId, userId) {
     return rows.length > 0;
 }
 
-module.exports.isJudgeOnActiveCase = isJudgeOnActiveCase;
-module.exports.isLawyerOnActiveCase = isLawyerOnActiveCase;
-module.exports.isJurorOnActiveCase = isJurorOnActiveCase;
-
 // ============================================================
-// --- PINNED EMBED ---
+// PINNED EMBED
 // ============================================================
 
 async function buildCaseEmbed(c) {
     const jury = await getJuryMembers(c.id);
-    const juryList = jury.length ? jury.map(j => `<@${j.user_id}>`).join(', ') : 'No jury yet';
+    const juryList = jury.length ? jury.map(j => `<@${j.user_id}>`).join(', ') : '*No jury yet*';
     const statusColor = STATUS_COLORS[c.status] || Colors.neutral;
 
+    const statusEmojis = {
+        FILED: '📋', ASSIGNED: '⚖️', WAITING_LAWYERS: '⏳', SCHEDULED: '📅',
+        IN_PROGRESS: '🔴', VERDICT: '🔨', CLOSED: '✅', CANCELLED: '❌', DISMISSED: '🚫'
+    };
+    const emoji = statusEmojis[c.status] || '📄';
+
     const lines = [
-        `**Case ID:** ${formatCaseId(c.case_number)}`,
-        `**Status:** \`${c.status}\``,
+        `**Case ID:** \`${formatCaseId(c.case_number)}\``,
+        `**Status:** ${emoji} \`${c.status}\``,
+        `**Filed:** ${ts(c.filed_at)}`,
         '',
-        `**Prosecutor:** <@${c.prosecutor_id}>`,
-        `**Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None assigned*'}`,
+        `**👨‍⚖️ Prosecutor:** <@${c.prosecutor_id}>`,
+        `**🏛️ Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None assigned*'}`,
         '',
-        `**Defendant:** <@${c.defendant_id}>`,
-        `**Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None assigned*'}`,
+        `**👤 Defendant:** <@${c.defendant_id}>`,
+        `**🛡️ Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None assigned*'}`,
         '',
-        `**Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*Not yet assigned*'}`,
+        `**⚖️ Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*Not yet assigned*'}`,
         '',
-        `**Jury:** ${juryList}`,
+        `**🗳️ Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
         '',
-        `**Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*Not scheduled*'}`,
-        `**Evidence Messages:** ${c.evidence_count}`,
+        `**📅 Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*Not scheduled*'}`,
+        `**📁 Evidence Count:** ${c.evidence_count}`,
+        '',
+        `**📝 Reason:** ${c.reason}`,
     ];
 
     if (c.verdict) {
         lines.push('');
-        lines.push(`**Verdict:** \`${c.verdict}\``);
+        lines.push(`**🔨 Verdict:** \`${c.verdict}\``);
         lines.push(`**Reason:** ${c.verdict_reason}`);
         if (c.punishment_type) {
-            lines.push(`**Punishment:** \`${c.punishment_type}\` - ${c.punishment_length || 'permanent'}`);
+            lines.push(`**⚡ Punishment:** \`${c.punishment_type}\` — ${c.punishment_length ? msToHuman(parseDuration(c.punishment_length) ?? -1) : 'Permanent'}`);
         }
     }
 
-    lines.push('');
-    lines.push(`**Filed:** ${ts(c.filed_at)}`);
-    lines.push(`**Reason:** ${c.reason}`);
-
     return new EmbedBuilder()
         .setColor(statusColor)
-        .setTitle(`Case ${formatCaseId(c.case_number)} - ${c.status}`)
+        .setTitle(`${emoji} Case ${formatCaseId(c.case_number)} — ${c.status}`)
         .setDescription(lines.join('\n'))
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({ text: `Court Bot • ${formatCaseId(c.case_number)}` });
 }
 
 async function updatePinnedEmbed(c) {
@@ -529,11 +494,8 @@ async function updatePinnedEmbed(c) {
     }
 }
 
-module.exports.buildCaseEmbed = buildCaseEmbed;
-module.exports.updatePinnedEmbed = updatePinnedEmbed;
-
 // ============================================================
-// --- DM HELPERS ---
+// DM HELPERS
 // ============================================================
 
 async function dmUser(userId, embed) {
@@ -557,12 +519,8 @@ async function getCaseParticipants(c) {
     return [...ids];
 }
 
-module.exports.dmUser = dmUser;
-module.exports.dmAll = dmAll;
-module.exports.getCaseParticipants = getCaseParticipants;
-
 // ============================================================
-// --- CHANNEL PERMISSION HELPERS ---
+// CHANNEL PERMISSION HELPERS
 // ============================================================
 
 async function addParticipantToChannel(channel, userId) {
@@ -588,20 +546,31 @@ async function lockChannel(channel) {
     }
 }
 
-module.exports.addParticipantToChannel = addParticipantToChannel;
-module.exports.removeParticipantFromChannel = removeParticipantFromChannel;
-module.exports.lockChannel = lockChannel;
-
 // ============================================================
-// --- ARCHIVE HELPER ---
+// ARCHIVE HELPER — also deletes jury/judge chat channels
 // ============================================================
 
 async function archiveCase(c, guild, config, summaryEmbed) {
     try {
+        // Delete jury-chat and judge-chat channels (no longer needed)
+        if (c.jury_chat_channel_id) {
+            const juryChannel = await guild.channels.fetch(c.jury_chat_channel_id).catch(() => null);
+            if (juryChannel) await juryChannel.delete('Case closed — jury chat removed.').catch(() => {});
+        }
+        if (c.judge_chat_channel_id) {
+            const judgeChannel = await guild.channels.fetch(c.judge_chat_channel_id).catch(() => null);
+            if (judgeChannel) await judgeChannel.delete('Case closed — judge chat removed.').catch(() => {});
+        }
+
+        // Move/lock main case channel to archive
         if (c.case_channel_id) {
             const ch = await guild.channels.fetch(c.case_channel_id).catch(() => null);
             if (ch) {
-                const archiveName = resolveChannelName(config.archive_channel_format || 'case-{case_id}-archive', c.case_number, c.defendant_id);
+                const archiveName = resolveChannelName(
+                    config.archive_channel_format || 'case-{case_id}-archive',
+                    c.case_number,
+                    c.defendant_id
+                );
                 await ch.setName(archiveName).catch(() => {});
                 if (config.archive_category_id) {
                     await ch.setParent(config.archive_category_id, { lockPermissions: false }).catch(() => {});
@@ -609,6 +578,8 @@ async function archiveCase(c, guild, config, summaryEmbed) {
                 await lockChannel(ch);
             }
         }
+
+        // Post to court-records
         if (config.court_records_name) {
             const recordsChannel = guild.channels.cache.find(
                 ch => ch.name === config.court_records_name && ch.type === ChannelType.GuildText
@@ -617,6 +588,7 @@ async function archiveCase(c, guild, config, summaryEmbed) {
                 await recordsChannel.send({ embeds: [summaryEmbed] }).catch(() => {});
             }
         }
+
         await pool.query('UPDATE cases SET closed_at = NOW() WHERE id = $1', [c.id]);
     } catch (e) {
         console.error('Archive error:', e.message);
@@ -625,7 +597,7 @@ async function archiveCase(c, guild, config, summaryEmbed) {
 
 function buildSummaryEmbed(c, closedBy) {
     const lines = [
-        `**Case:** ${formatCaseId(c.case_number)}`,
+        `**Case:** \`${formatCaseId(c.case_number)}\``,
         `**Status:** \`${c.status}\``,
         `**Prosecutor:** <@${c.prosecutor_id}>`,
         `**Defendant:** <@${c.defendant_id}>`,
@@ -638,41 +610,35 @@ function buildSummaryEmbed(c, closedBy) {
     if (c.verdict) {
         lines.push(`**Verdict:** \`${c.verdict}\``);
         lines.push(`**Verdict Reason:** ${c.verdict_reason}`);
-        if (c.punishment_type) lines.push(`**Punishment:** \`${c.punishment_type}\` - ${c.punishment_length || 'permanent'}`);
+        if (c.punishment_type) lines.push(`**Punishment:** \`${c.punishment_type}\` — ${c.punishment_length || 'permanent'}`);
     }
     if (closedBy) lines.push(`**Closed by:** ${closedBy}`);
     const color = STATUS_COLORS[c.status] || Colors.neutral;
     return new EmbedBuilder()
         .setColor(color)
-        .setTitle(`Case Closed - ${formatCaseId(c.case_number)}`)
+        .setTitle(`📁 Case Closed — ${formatCaseId(c.case_number)}`)
         .setDescription(lines.join('\n'))
         .setTimestamp();
 }
 
-module.exports.archiveCase = archiveCase;
-module.exports.buildSummaryEmbed = buildSummaryEmbed;
-
 // ============================================================
-// --- PUNISHMENT ENGINE ---
+// PUNISHMENT ENGINE
 // ============================================================
 
-const activeTimers = new Map();     // caseId or `jail_userId_guildId` -> timeout handle
-const activeBanTimers = new Map();  // `ban_userId_guildId` -> timeout handle
+const activeTimers = new Map();
+const activeBanTimers = new Map();
 
 async function jailUser(guild, targetMember, jailedById, reason, durationMs, config) {
     if (!config?.jail_role_id) throw new Error('Jail role not configured. Run /setup first.');
 
-    // Save current roles (excluding @everyone and the jail role itself)
     const savedRoles = targetMember.roles.cache
         .filter(r => r.id !== guild.roles.everyone.id && r.id !== config.jail_role_id)
         .map(r => r.id);
 
-    // Remove all roles
     await targetMember.roles.set([config.jail_role_id]).catch(e => { throw new Error(`Failed to set jail role: ${e.message}`); });
 
     const releaseAt = durationMs === -1 ? null : new Date(Date.now() + durationMs);
 
-    // Upsert jailed_users record
     await pool.query(`
         INSERT INTO jailed_users (guild_id, user_id, jailed_by, reason, release_at, saved_roles)
         VALUES ($1, $2, $3, $4, $5, $6)
@@ -680,7 +646,6 @@ async function jailUser(guild, targetMember, jailedById, reason, durationMs, con
             jailed_by = $3, reason = $4, release_at = $5, saved_roles = $6, jailed_at = NOW()
     `, [guild.id, targetMember.id, jailedById, reason || 'No reason provided.', releaseAt, JSON.stringify(savedRoles)]);
 
-    // Schedule auto-release if not permanent
     if (durationMs !== -1 && releaseAt) {
         await scheduleJailRelease(guild.id, targetMember.id, durationMs);
     }
@@ -699,7 +664,6 @@ async function unjailUser(guild, userId, config) {
     const member = await guild.members.fetch(userId).catch(() => null);
 
     if (member) {
-        // Parse saved roles
         let savedRoles = [];
         try {
             savedRoles = typeof record.saved_roles === 'string'
@@ -707,17 +671,12 @@ async function unjailUser(guild, userId, config) {
                 : record.saved_roles;
         } catch { savedRoles = []; }
 
-        // Filter to roles that still exist in the guild
         const validRoles = savedRoles.filter(rId => guild.roles.cache.has(rId));
-
-        // Remove jail role and restore saved roles
         await member.roles.set(validRoles).catch(e => console.error('Role restore error:', e.message));
     }
 
-    // Remove from DB
     await pool.query('DELETE FROM jailed_users WHERE guild_id = $1 AND user_id = $2', [guild.id, userId]);
 
-    // Clear any active timer
     const timerKey = `jail_${userId}_${guild.id}`;
     if (activeTimers.has(timerKey)) {
         clearTimeout(activeTimers.get(timerKey));
@@ -737,7 +696,7 @@ async function scheduleJailRelease(guildId, userId, ms) {
         if (!guild) return;
         const config = await getConfig(guildId);
         await unjailUser(guild, userId, config).catch(e => console.error('Auto-unjail error:', e.message));
-        await dmUser(userId, simpleEmbed(Colors.success, 'Released from Jail', `You have been automatically released in **${guild.name}**.`));
+        await dmUser(userId, simpleEmbed(Colors.success, '🔓 Released from Jail', `You have been automatically released in **${guild.name}**.`));
         await logAction(userId, 'AUTO_UNJAILED', 'Sentence served.', client.user.id);
     }, ms);
     activeTimers.set(timerKey, handle);
@@ -764,14 +723,19 @@ async function applyVerdictPunishment(guild, c, config) {
     if (!c.punishment_type || c.verdict !== 'GUILTY') return;
 
     const member = await guild.members.fetch(c.defendant_id).catch(() => null);
-    const durationMs = c.punishment_length && c.punishment_length !== 'perm'
+    const durationMs = c.punishment_length && c.punishment_length.toLowerCase() !== 'perm'
         ? parseDuration(c.punishment_length)
         : -1;
 
     const punishEmbed = new EmbedBuilder()
         .setColor(Colors.error)
-        .setTitle('Court Verdict Punishment')
-        .setDescription(`You have been found **GUILTY** in **${guild.name}** (${formatCaseId(c.case_number)}).\n**Punishment:** \`${c.punishment_type}\`\n**Duration:** ${durationMs === -1 ? 'Permanent' : msToHuman(durationMs)}\n**Reason:** ${c.verdict_reason}`)
+        .setTitle('⚖️ Court Verdict — Punishment Applied')
+        .setDescription(
+            `You have been found **GUILTY** in **${guild.name}** (${formatCaseId(c.case_number)}).\n` +
+            `**Punishment:** \`${c.punishment_type}\`\n` +
+            `**Duration:** ${durationMs === -1 ? 'Permanent' : msToHuman(durationMs)}\n` +
+            `**Reason:** ${c.verdict_reason}`
+        )
         .setTimestamp();
 
     await dmUser(c.defendant_id, punishEmbed).catch(() => {});
@@ -800,7 +764,7 @@ async function applyVerdictPunishment(guild, c, config) {
 
         case 'MUTE':
             if (!member) break;
-            const muteMs = durationMs === -1 ? 28 * 24 * 60 * 60 * 1000 : durationMs; // Discord max timeout = 28d
+            const muteMs = durationMs === -1 ? 28 * 24 * 60 * 60 * 1000 : durationMs;
             await member.timeout(muteMs, `Court verdict: ${c.verdict_reason}`).catch(e => console.error('Mute error:', e.message));
             break;
     }
@@ -808,16 +772,8 @@ async function applyVerdictPunishment(guild, c, config) {
     await logAction(c.defendant_id, `PUNISHMENT_${c.punishment_type}`, c.verdict_reason, client.user.id);
 }
 
-module.exports.jailUser = jailUser;
-module.exports.unjailUser = unjailUser;
-module.exports.scheduleJailRelease = scheduleJailRelease;
-module.exports.scheduleUnban = scheduleUnban;
-module.exports.applyVerdictPunishment = applyVerdictPunishment;
-module.exports.activeTimers = activeTimers;
-module.exports.activeBanTimers = activeBanTimers;
-
 // ============================================================
-// --- SCHEDULED CASE TIMERS ---
+// SCHEDULED CASE TIMERS
 // ============================================================
 
 async function scheduleCase(c) {
@@ -846,47 +802,38 @@ async function startCaseNow(caseId) {
     if (updated.case_channel_id) {
         const ch = await client.channels.fetch(updated.case_channel_id).catch(() => null);
         if (ch) {
-            await ch.send({ embeds: [simpleEmbed(Colors.in_progress, 'Court is Now in Session', `${formatCaseId(updated.case_number)} has officially begun. All parties, please take your positions.`)] });
+            await ch.send({ embeds: [simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `${formatCaseId(updated.case_number)} has officially begun. All parties, please take your positions.`)] });
         }
     }
 
     await updatePinnedEmbed(updated);
 
     const participants = await getCaseParticipants(updated);
-    const dmEmbed = simpleEmbed(Colors.in_progress, 'Court is Now in Session', `${formatCaseId(updated.case_number)} has begun.`);
-    await dmAll(participants, dmEmbed);
-
+    await dmAll(participants, simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `**${formatCaseId(updated.case_number)}** has begun.`));
     await logAction(updated.guild_id, 'CASE_STARTED', formatCaseId(updated.case_number), client.user.id);
 }
 
 async function rehydrateTimers() {
-    // Rehydrate case timers
     const { rows: caseRows } = await pool.query(`SELECT * FROM cases WHERE status = 'SCHEDULED' AND scheduled_at > NOW()`);
     for (const c of caseRows) await scheduleCase(c);
 
-    // Rehydrate jail timers
     const { rows: jailRows } = await pool.query(`SELECT * FROM jailed_users WHERE release_at IS NOT NULL AND release_at > NOW()`);
     for (const j of jailRows) {
         const ms = new Date(j.release_at).getTime() - Date.now();
         await scheduleJailRelease(j.guild_id, j.user_id, ms);
     }
 
-    // Rehydrate ban timers
     const { rows: banRows } = await pool.query(`SELECT * FROM punishment_timers WHERE type = 'UNBAN' AND execute_at > NOW()`);
     for (const b of banRows) {
         const ms = new Date(b.execute_at).getTime() - Date.now();
         await scheduleUnban(b.guild_id, b.user_id, ms);
     }
 
-    console.log(`Re-hydrated ${caseRows.length} case timer(s), ${jailRows.length} jail timer(s), ${banRows.length} ban timer(s).`);
+    console.log(`Rehydrated: ${caseRows.length} case(s), ${jailRows.length} jail(s), ${banRows.length} ban(s).`);
 }
 
-module.exports.scheduleCase = scheduleCase;
-module.exports.startCaseNow = startCaseNow;
-module.exports.rehydrateTimers = rehydrateTimers;
-
 // ============================================================
-// --- ASSIGN LAWYER HELPER ---
+// ASSIGN LAWYER HELPER
 // ============================================================
 
 async function _assignLawyer(c, req, userId, guild) {
@@ -909,45 +856,51 @@ async function _assignLawyer(c, req, userId, guild) {
     await updatePinnedEmbed(final);
 
     const participants = await getCaseParticipants(final);
-    await dmAll(participants, simpleEmbed(Colors.success, 'Lawyer Assigned', `<@${userId}> is now the ${req.side} lawyer for **${formatCaseId(final.case_number)}**.`));
+    await dmAll(participants, simpleEmbed(Colors.success, '⚖️ Lawyer Assigned', `<@${userId}> is now the **${req.side}** lawyer for **${formatCaseId(final.case_number)}**.`));
 }
 
-module.exports._assignLawyer = _assignLawyer;
-
 // ============================================================
-// --- SETUP WIZARD ---
+// SETUP WIZARD
 // ============================================================
 
 const SETUP_STEPS_1 = [
-    { key: 'court_category_id',      label: 'Court Category ID',           hint: 'Category ID where active case channels will be created.' },
-    { key: 'archive_category_id',    label: 'Archive Category ID',         hint: 'Category ID where closed case channels will be moved.' },
-    { key: 'judge_chat_name',        label: 'Judge Chat Channel Name',     hint: 'Name for the judge-only channel (e.g. judge-chat).' },
-    { key: 'court_records_name',     label: 'Court Records Channel Name',  hint: 'Name for the public records channel (e.g. court-records).' },
-    { key: 'jury_chat_name',         label: 'Jury Chat Channel Name',      hint: 'Name for the jury channel (e.g. jury-chat).' },
+    { key: 'court_category_id',   label: 'Court Category ID',          hint: 'ID of the category for active case channels.' },
+    { key: 'archive_category_id', label: 'Archive Category ID',        hint: 'ID of the category for closed/archived cases.' },
+    { key: 'judge_chat_name',     label: 'Judge Chat Name Prefix',      hint: 'Prefix for judge channel (e.g. judge-chat → judge-chat-001).' },
+    { key: 'court_records_name',  label: 'Court Records Channel Name',  hint: 'Name of the public records channel (e.g. court-records).' },
+    { key: 'jury_chat_name',      label: 'Jury Chat Name Prefix',       hint: 'Prefix for jury channel (e.g. jury-chat → jury-chat-001).' },
 ];
 
 const SETUP_STEPS_2 = [
-    { key: 'case_channel_format',    label: 'Case Channel Name Format',    hint: 'Supports {case_id} and {defendant} (e.g. courtcase-{case_id}).' },
-    { key: 'archive_channel_format', label: 'Archive Channel Name Format', hint: 'Supports {case_id} and {defendant} (e.g. case-{case_id}-archive).' },
-    { key: 'judge_role_id',          label: 'Judge Role ID',               hint: 'The Discord role ID for judges.' },
-    { key: 'jail_role_id',           label: 'Jail Role ID',                hint: 'The Discord role ID assigned to jailed users.' },
-    { key: 'slowmode_value',         label: 'Slowmode Value (seconds)',     hint: 'Slowmode for case channels in seconds (0 = off).' },
+    { key: 'case_channel_format',    label: 'Case Channel Name Format',    hint: 'Use {case_id}. Example: courtcase-{case_id}' },
+    { key: 'archive_channel_format', label: 'Archive Channel Name Format', hint: 'Use {case_id}. Example: case-{case_id}-archive' },
+    { key: 'judge_role_id',          label: 'Judge Role ID',               hint: 'Discord role ID for judges.' },
+    { key: 'jail_role_id',           label: 'Jail Role ID',                hint: 'Discord role ID for jailed users.' },
+    { key: 'slowmode_value',         label: 'Slowmode (seconds, 0 = off)', hint: 'Slowmode applied to case channels.' },
 ];
 
-const setupSessions = new Map(); // userId -> { step, modal, values, guildId }
+const setupSessions = new Map();
 
 function buildSetupInitEmbed(config) {
+    const fields = config ? [
+        `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '❌ Not set'}`,
+        `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '❌ Not set'}`,
+        `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '❌ Not set'}`,
+        `**Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '❌ Not set'}`,
+        `**Slowmode:** \`${config.slowmode_value || 0}s\``,
+    ] : [];
+
     const lines = [
-        'Welcome to the Court Bot setup wizard.',
+        '**Welcome to the Court Bot Setup Wizard**',
         '',
-        'Click **Start Setup** to configure the bot in two steps.',
-        'Click **Close Setup** to cancel.',
+        'Click **▶ Start Setup** to configure the bot in 2 steps (2 modals).',
+        'Your answers are pre-filled with your current config if one exists.',
         '',
-        config ? '**Current configuration exists.** Starting setup will overwrite it.' : 'No configuration found yet.',
+        config ? `**Current config:**\n${fields.join('\n')}` : '⚠️ No configuration found yet.',
     ];
     return new EmbedBuilder()
         .setColor(Colors.info)
-        .setTitle('Court Bot Setup')
+        .setTitle('⚙️ Court Bot Setup')
         .setDescription(lines.join('\n'))
         .setTimestamp();
 }
@@ -956,7 +909,7 @@ function buildSetupModal(modalNum, values) {
     const steps = modalNum === 1 ? SETUP_STEPS_1 : SETUP_STEPS_2;
     const modal = new ModalBuilder()
         .setCustomId(`setup_modal_${modalNum}`)
-        .setTitle(`Setup - Part ${modalNum} of 2`);
+        .setTitle(`⚙️ Setup — Part ${modalNum} of 2`);
 
     for (const step of steps) {
         modal.addComponents(
@@ -966,7 +919,7 @@ function buildSetupModal(modalNum, values) {
                     .setLabel(step.label)
                     .setStyle(TextInputStyle.Short)
                     .setPlaceholder(step.hint.substring(0, 100))
-                    .setValue(values[step.key] || '')
+                    .setValue(values[step.key] != null ? String(values[step.key]) : '')
                     .setRequired(false)
             )
         );
@@ -974,18 +927,9 @@ function buildSetupModal(modalNum, values) {
     return modal;
 }
 
-module.exports.setupSessions = setupSessions;
-module.exports.buildSetupInitEmbed = buildSetupInitEmbed;
-module.exports.buildSetupModal = buildSetupModal;
-module.exports.SETUP_STEPS_1 = SETUP_STEPS_1;
-module.exports.SETUP_STEPS_2 = SETUP_STEPS_2;
-
 // ============================================================
-// --- READY ---
+// READY
 // ============================================================
-
-// Load commands from part 2
-const registerCommands2 = require('./commands.js');
 
 client.once('ready', async () => {
     console.log(`Court Bot online as: ${client.user.tag}`);
@@ -996,8 +940,8 @@ client.once('ready', async () => {
 
     await client.application.commands.set([
         // Setup
-        { name: 'setup',        description: 'Interactive court setup wizard (admin only)', ...CMD_GUILD },
-        { name: 'courtconfig',  description: 'View current court configuration (admin only)', ...CMD_GUILD },
+        { name: 'setup',       description: 'Interactive court setup wizard (admin only)', ...CMD_GUILD },
+        { name: 'courtconfig', description: 'View current court configuration (admin only)', ...CMD_GUILD },
 
         // Case Filing
         { name: 'filecase', description: 'File a case against a user', ...CMD_GUILD, options: [
@@ -1018,28 +962,28 @@ client.once('ready', async () => {
             { name: 'time',    description: 'Time from now (e.g. 1h, 30m)',   type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'postpone', description: 'Reschedule a case', ...CMD_GUILD, options: [
-            { name: 'case_id',  description: 'Case ID',                type: ApplicationCommandOptionType.String, required: true },
-            { name: 'new_time', description: 'New time (e.g. 2h)',     type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id',  description: 'Case ID',            type: ApplicationCommandOptionType.String, required: true },
+            { name: 'new_time', description: 'New time (e.g. 2h)', type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'endcase', description: 'End a case manually', ...CMD_GUILD, options: [
             { name: 'case_id', description: 'Case ID', type: ApplicationCommandOptionType.String, required: true },
             { name: 'reason',  description: 'Reason',  type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'dismiss', description: 'Dismiss a case', ...CMD_GUILD, options: [
-            { name: 'case_id', description: 'Case ID',             type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id', description: 'Case ID',              type: ApplicationCommandOptionType.String, required: true },
             { name: 'reason',  description: 'Reason for dismissal', type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'verdict', description: 'Set the final verdict', ...CMD_GUILD, options: [
-            { name: 'case_id',          description: 'Case ID',              type: ApplicationCommandOptionType.String, required: true },
-            { name: 'verdict',          description: 'guilty or not guilty', type: ApplicationCommandOptionType.String, required: true,
+            { name: 'case_id',           description: 'Case ID',              type: ApplicationCommandOptionType.String, required: true },
+            { name: 'verdict',           description: 'guilty or not guilty', type: ApplicationCommandOptionType.String, required: true,
               choices: [{ name: 'Guilty', value: 'GUILTY' }, { name: 'Not Guilty', value: 'NOT GUILTY' }] },
-            { name: 'reason',           description: 'Charges or reason',    type: ApplicationCommandOptionType.String, required: true },
-            { name: 'punishment_type',  description: 'Punishment to apply',  type: ApplicationCommandOptionType.String, required: false,
+            { name: 'reason',            description: 'Charges or reason',    type: ApplicationCommandOptionType.String, required: true },
+            { name: 'punishment_type',   description: 'Punishment to apply',  type: ApplicationCommandOptionType.String, required: false,
               choices: [
-                  { name: 'Mute (timeout)',  value: 'MUTE' },
-                  { name: 'Ban',             value: 'BAN'  },
-                  { name: 'Kick',            value: 'KICK' },
-                  { name: 'Jail',            value: 'JAIL' },
+                  { name: 'Mute (timeout)', value: 'MUTE' },
+                  { name: 'Ban',            value: 'BAN'  },
+                  { name: 'Kick',           value: 'KICK' },
+                  { name: 'Jail',           value: 'JAIL' },
               ]},
             { name: 'punishment_length', description: 'Duration (e.g. 1h, 7d, perm)', type: ApplicationCommandOptionType.String, required: false },
         ]},
@@ -1050,7 +994,7 @@ client.once('ready', async () => {
             { name: 'user', description: 'User to revoke', type: ApplicationCommandOptionType.User, required: true },
         ]},
         { name: 'transfercase', description: 'Transfer a case to a new judge (admin only)', ...CMD_GUILD, options: [
-            { name: 'case_id',   description: 'Case ID',       type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id',   description: 'Case ID',        type: ApplicationCommandOptionType.String, required: true },
             { name: 'new_judge', description: 'New judge user', type: ApplicationCommandOptionType.User,   required: true },
         ]},
         { name: 'forcestart', description: 'Force start a case (admin override)', ...CMD_GUILD, options: [
@@ -1074,9 +1018,9 @@ client.once('ready', async () => {
             { name: 'case_id', description: 'Case ID',    type: ApplicationCommandOptionType.String, required: true },
             { name: 'field',   description: 'Field name', type: ApplicationCommandOptionType.String, required: true,
               choices: [
-                  { name: 'reason',          value: 'reason'          },
-                  { name: 'verdict_reason',  value: 'verdict_reason'  },
-                  { name: 'punishment_type', value: 'punishment_type' },
+                  { name: 'reason',            value: 'reason'            },
+                  { name: 'verdict_reason',    value: 'verdict_reason'    },
+                  { name: 'punishment_type',   value: 'punishment_type'   },
                   { name: 'punishment_length', value: 'punishment_length' },
               ]},
             { name: 'value', description: 'New value', type: ApplicationCommandOptionType.String, required: true },
@@ -1084,7 +1028,7 @@ client.once('ready', async () => {
 
         // Lawyer Commands
         { name: 'requestlawyer', description: 'Request a user to be your lawyer', ...CMD_GUILD, options: [
-            { name: 'case_id', description: 'Case ID',        type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id', description: 'Case ID',         type: ApplicationCommandOptionType.String, required: true },
             { name: 'user',    description: 'User to request', type: ApplicationCommandOptionType.User,   required: true },
         ]},
         { name: 'revokelawyer', description: 'Fire your current lawyer', ...CMD_GUILD, options: [
@@ -1098,7 +1042,7 @@ client.once('ready', async () => {
             { name: 'case_id', description: 'Case ID (e.g. 1 or CASE-001)', type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'replacelawyer', description: 'Force swap a lawyer on a case (admin only)', ...CMD_GUILD, options: [
-            { name: 'case_id', description: 'Case ID',           type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id', description: 'Case ID',            type: ApplicationCommandOptionType.String, required: true },
             { name: 'side',    description: 'prosecution/defense', type: ApplicationCommandOptionType.String, required: true,
               choices: [{ name: 'Prosecution', value: 'prosecution' }, { name: 'Defense', value: 'defense' }] },
             { name: 'user',    description: 'New lawyer',          type: ApplicationCommandOptionType.User,   required: true },
@@ -1114,8 +1058,8 @@ client.once('ready', async () => {
             { name: 'reason',  description: 'Reason',  type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'vote', description: 'Cast your jury vote', ...CMD_GUILD, options: [
-            { name: 'case_id', description: 'Case ID',      type: ApplicationCommandOptionType.String, required: true },
-            { name: 'vote',    description: 'Your vote',    type: ApplicationCommandOptionType.String, required: true,
+            { name: 'case_id', description: 'Case ID',        type: ApplicationCommandOptionType.String, required: true },
+            { name: 'vote',    description: 'Your vote',      type: ApplicationCommandOptionType.String, required: true,
               choices: [{ name: 'Guilty', value: 'GUILTY' }, { name: 'Not Guilty', value: 'NOT GUILTY' }] },
             { name: 'reason',  description: 'Your reasoning', type: ApplicationCommandOptionType.String, required: true },
         ]},
@@ -1125,9 +1069,9 @@ client.once('ready', async () => {
 
         // Evidence
         { name: 'strikeevidence', description: 'Strike a message from the evidence log', ...CMD_GUILD, options: [
-            { name: 'case_id',    description: 'Case ID',           type: ApplicationCommandOptionType.String, required: true },
-            { name: 'message_id', description: 'The message ID',    type: ApplicationCommandOptionType.String, required: true },
-            { name: 'reason',     description: 'Reason',            type: ApplicationCommandOptionType.String, required: true },
+            { name: 'case_id',    description: 'Case ID',        type: ApplicationCommandOptionType.String, required: true },
+            { name: 'message_id', description: 'The message ID', type: ApplicationCommandOptionType.String, required: true },
+            { name: 'reason',     description: 'Reason',         type: ApplicationCommandOptionType.String, required: true },
         ]},
         { name: 'evidence', description: 'View paginated evidence log for a case', ...CMD_GUILD, options: [
             { name: 'case_id', description: 'Case ID', type: ApplicationCommandOptionType.String, required: true },
@@ -1148,9 +1092,9 @@ client.once('ready', async () => {
 
         // Punishment
         { name: 'jail', description: 'Jail a user (admin only)', ...CMD_GUILD, options: [
-            { name: 'user',   description: 'User to jail',              type: ApplicationCommandOptionType.User,   required: true },
-            { name: 'time',   description: 'Duration (e.g. 1h, perm)',  type: ApplicationCommandOptionType.String, required: true },
-            { name: 'reason', description: 'Reason',                    type: ApplicationCommandOptionType.String, required: false },
+            { name: 'user',   description: 'User to jail',             type: ApplicationCommandOptionType.User,   required: true },
+            { name: 'time',   description: 'Duration (e.g. 1h, perm)', type: ApplicationCommandOptionType.String, required: true },
+            { name: 'reason', description: 'Reason',                   type: ApplicationCommandOptionType.String, required: false },
         ]},
         { name: 'unjail', description: 'Release a jailed user (admin only)', ...CMD_GUILD, options: [
             { name: 'user', description: 'User to release', type: ApplicationCommandOptionType.User, required: true },
@@ -1161,7 +1105,7 @@ client.once('ready', async () => {
 });
 
 // ============================================================
-// --- INTERACTION HANDLER ---
+// INTERACTION HANDLER
 // ============================================================
 
 client.on('interactionCreate', async interaction => {
@@ -1169,17 +1113,14 @@ client.on('interactionCreate', async interaction => {
 
     // ---- SLASH COMMANDS ----
     if (interaction.isChatInputCommand()) {
-        await interaction.deferReply({ ephemeral: false });
         const cmd = interaction.commandName;
         const guildId = interaction.guildId;
 
-        try {
-
-            // ================================================================
-            // /setup
-            // ================================================================
-            if (cmd === 'setup') {
-                if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] });
+        // /setup must NOT be deferred — it needs to show a modal via button click
+        // Handle it separately before deferring everything else
+        if (cmd === 'setup') {
+            if (!isAdmin) return interaction.reply({ embeds: [errEmbed('Administrator permission required.')], ephemeral: true });
+            try {
                 const config = await ensureConfig(guildId);
                 const values = {
                     court_category_id:      config.court_category_id      || '',
@@ -1196,12 +1137,21 @@ client.on('interactionCreate', async interaction => {
                 setupSessions.set(interaction.user.id, { values, guildId });
 
                 const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('setup_start').setLabel('Start Setup').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('setup_close').setLabel('Close Setup').setStyle(ButtonStyle.Secondary),
+                    new ButtonBuilder().setCustomId('setup_start').setLabel('▶ Start Setup').setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder().setCustomId('setup_close').setLabel('✖ Close').setStyle(ButtonStyle.Secondary),
                 );
-                await interaction.editReply({ embeds: [buildSetupInitEmbed(config)], components: [row] });
-                return;
+                await interaction.reply({ embeds: [buildSetupInitEmbed(config)], components: [row], ephemeral: true });
+            } catch (e) {
+                console.error('Setup error:', e);
+                await interaction.reply({ embeds: [errEmbed(`Setup failed: ${e.message}`)], ephemeral: true });
             }
+            return;
+        }
+
+        // All other commands are deferred
+        await interaction.deferReply({ ephemeral: false });
+
+        try {
 
             // ================================================================
             // /courtconfig
@@ -1211,18 +1161,18 @@ client.on('interactionCreate', async interaction => {
                 const config = await getConfig(guildId);
                 if (!config) return interaction.editReply({ embeds: [errEmbed('No configuration found. Run /setup first.')] });
                 const lines = [
-                    `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '*Not set*'}`,
-                    `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '*Not set*'}`,
-                    `**Judge Chat Name:** \`${config.judge_chat_name || 'Not set'}\``,
-                    `**Court Records Name:** \`${config.court_records_name || 'Not set'}\``,
-                    `**Jury Chat Name:** \`${config.jury_chat_name || 'Not set'}\``,
-                    `**Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
-                    `**Archive Channel Format:** \`${config.archive_channel_format || 'Not set'}\``,
-                    `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '*Not set*'}`,
-                    `**Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '*Not set*'}`,
-                    `**Slowmode:** \`${config.slowmode_value || 0}s\``,
+                    `**🏛️ Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '❌ *Not set*'}`,
+                    `**📁 Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '❌ *Not set*'}`,
+                    `**🔨 Judge Chat Prefix:** \`${config.judge_chat_name || 'Not set'}\``,
+                    `**📋 Court Records Channel:** \`${config.court_records_name || 'Not set'}\``,
+                    `**🗳️ Jury Chat Prefix:** \`${config.jury_chat_name || 'Not set'}\``,
+                    `**📝 Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
+                    `**📁 Archive Format:** \`${config.archive_channel_format || 'Not set'}\``,
+                    `**⚖️ Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '❌ *Not set*'}`,
+                    `**🔒 Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '❌ *Not set*'}`,
+                    `**⏱️ Slowmode:** \`${config.slowmode_value || 0}s\``,
                 ];
-                return interaction.editReply({ embeds: [infoEmbed(Colors.info, 'Court Configuration', lines)] });
+                return interaction.editReply({ embeds: [infoEmbed(Colors.info, '⚙️ Court Configuration', lines)] });
             }
 
             // ================================================================
@@ -1240,7 +1190,6 @@ client.on('interactionCreate', async interaction => {
                 if (defendant.bot)
                     return interaction.editReply({ embeds: [errEmbed('You cannot file a case against a bot.')] });
 
-                // Check for existing active case between same parties
                 const { rows: existingCheck } = await pool.query(
                     `SELECT * FROM cases WHERE guild_id = $1 AND prosecutor_id = $2 AND defendant_id = $3 AND status NOT IN ('CLOSED','CANCELLED','DISMISSED')`,
                     [guildId, interaction.user.id, defendant.id]
@@ -1249,6 +1198,7 @@ client.on('interactionCreate', async interaction => {
 
                 const { rows: countRows } = await pool.query('SELECT COUNT(*) FROM cases WHERE guild_id = $1', [guildId]);
                 const caseNumber = parseInt(countRows[0].count) + 1;
+                const paddedId = String(caseNumber).padStart(3, '0');
 
                 const { rows: insertRows } = await pool.query(
                     `INSERT INTO cases (guild_id, case_number, prosecutor_id, defendant_id, reason, status)
@@ -1259,6 +1209,10 @@ client.on('interactionCreate', async interaction => {
 
                 const guild = interaction.guild;
                 const channelName = resolveChannelName(config.case_channel_format, caseNumber, defendant.id);
+
+                // Jury and judge chat names include case ID to avoid conflicts
+                const juryChatName = `${config.jury_chat_name || 'jury-chat'}-${paddedId}`;
+                const judgeChatName = `${config.judge_chat_name || 'judge-chat'}-${paddedId}`;
 
                 const perms = [
                     { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
@@ -1272,12 +1226,12 @@ client.on('interactionCreate', async interaction => {
                     type: ChannelType.GuildText,
                     parent: config.court_category_id,
                     permissionOverwrites: perms,
-                    topic: `Case ${formatCaseId(caseNumber)} | ${interaction.user.tag} vs ${defendant.tag}`,
+                    topic: `${formatCaseId(caseNumber)} | ${interaction.user.tag} vs ${defendant.tag}`,
                     rateLimitPerUser: config.slowmode_value || 0,
                 });
 
                 const juryChat = await guild.channels.create({
-                    name: config.jury_chat_name || 'jury-chat',
+                    name: juryChatName,
                     type: ChannelType.GuildText,
                     parent: config.court_category_id,
                     permissionOverwrites: [
@@ -1288,7 +1242,7 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 const judgeChat = await guild.channels.create({
-                    name: config.judge_chat_name || 'judge-chat',
+                    name: judgeChatName,
                     type: ChannelType.GuildText,
                     parent: config.court_category_id,
                     permissionOverwrites: [
@@ -1310,13 +1264,18 @@ client.on('interactionCreate', async interaction => {
 
                 const recordsChannel = guild.channels.cache.find(ch => ch.name === config.court_records_name && ch.type === ChannelType.GuildText);
                 if (recordsChannel) {
-                    await recordsChannel.send({ embeds: [simpleEmbed(Colors.filed, `New Case Filed - ${formatCaseId(caseNumber)}`, `**Prosecutor:** <@${interaction.user.id}>\n**Defendant:** <@${defendant.id}>\n**Reason:** ${reason}\n\nCase channel: ${caseChannel}`)] });
+                    await recordsChannel.send({ embeds: [simpleEmbed(Colors.filed,
+                        `📋 New Case Filed — ${formatCaseId(caseNumber)}`,
+                        `**Prosecutor:** <@${interaction.user.id}>\n**Defendant:** <@${defendant.id}>\n**Reason:** ${reason}\n\n**Case Channel:** ${caseChannel}`
+                    )] });
                 }
 
-                await dmUser(defendant.id, simpleEmbed(Colors.warn, 'You Have Been Sued', `<@${interaction.user.id}> has filed a case against you in **${guild.name}**.\n\n**Reason:** ${reason}\n**Case:** ${formatCaseId(caseNumber)}\n\nCase channel: ${caseChannel}`));
+                await dmUser(defendant.id, simpleEmbed(Colors.warn, '⚠️ You Have Been Sued',
+                    `<@${interaction.user.id}> has filed a case against you in **${guild.name}**.\n\n**Reason:** ${reason}\n**Case:** ${formatCaseId(caseNumber)}\n\n**Case Channel:** ${caseChannel}`
+                ));
 
                 await logAction(defendant.id, 'CASE_FILED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Filed', `**${formatCaseId(caseNumber)}** has been filed.\nCase channel: ${caseChannel}`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Filed', `**${formatCaseId(caseNumber)}** has been filed.\n**Case Channel:** ${caseChannel}`)] });
             }
 
             // ================================================================
@@ -1332,7 +1291,7 @@ client.on('interactionCreate', async interaction => {
                 if (['CLOSED','CANCELLED','DISMISSED'].includes(c.status))
                     return interaction.editReply({ embeds: [errEmbed('This case is already closed.')] });
 
-                const ok = await confirm(interaction, 'Cancel Case', `Are you sure you want to cancel **${formatCaseId(c.case_number)}**?\nReason: ${reason}`);
+                const ok = await confirm(interaction, 'Cancel Case', `Cancel **${formatCaseId(c.case_number)}**?\n**Reason:** ${reason}`);
                 if (!ok) return;
 
                 await pool.query(`UPDATE cases SET status = 'CANCELLED' WHERE id = $1`, [c.id]);
@@ -1345,10 +1304,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.warn, 'Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.warn, '❌ Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_CANCELLED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.`)] });
             }
 
             // ================================================================
@@ -1391,10 +1350,10 @@ client.on('interactionCreate', async interaction => {
                 await updatePinnedEmbed(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.assigned, 'Judge Assigned', `<@${interaction.user.id}> has claimed **${formatCaseId(c.case_number)}** as the presiding judge.`));
+                await dmAll(participants, simpleEmbed(Colors.assigned, '⚖️ Judge Assigned', `<@${interaction.user.id}> has claimed **${formatCaseId(c.case_number)}** as the presiding judge.`));
 
                 await logAction(interaction.user.id, 'JUDGE_CLAIMED', formatCaseId(c.case_number), interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Claimed', `You are now the judge for **${formatCaseId(c.case_number)}**.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Claimed', `You are now the judge for **${formatCaseId(c.case_number)}**.`)] });
             }
 
             // ================================================================
@@ -1419,10 +1378,10 @@ client.on('interactionCreate', async interaction => {
                 await scheduleCase(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.scheduled, 'Case Scheduled', `**${formatCaseId(c.case_number)}** is scheduled to begin ${ts(scheduledAt)}.`));
+                await dmAll(participants, simpleEmbed(Colors.scheduled, '📅 Case Scheduled', `**${formatCaseId(c.case_number)}** is scheduled to begin ${ts(scheduledAt)}.`));
 
                 await logAction(interaction.user.id, 'CASE_SCHEDULED', `${formatCaseId(c.case_number)} at ${scheduledAt.toISOString()}`, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Scheduled', `**${formatCaseId(c.case_number)}** will go live ${ts(scheduledAt)}.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Scheduled', `**${formatCaseId(c.case_number)}** will go live ${ts(scheduledAt)}.`)] });
             }
 
             // ================================================================
@@ -1446,10 +1405,10 @@ client.on('interactionCreate', async interaction => {
                 await scheduleCase(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.warn, 'Case Postponed', `**${formatCaseId(c.case_number)}** has been rescheduled to ${ts(newTime)}.`));
+                await dmAll(participants, simpleEmbed(Colors.warn, '⏰ Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`));
 
                 await logAction(interaction.user.id, 'CASE_POSTPONED', `${formatCaseId(c.case_number)} to ${newTime.toISOString()}`, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`)] });
             }
 
             // ================================================================
@@ -1465,7 +1424,7 @@ client.on('interactionCreate', async interaction => {
                 if (c.judge_id !== interaction.user.id && !isAdmin)
                     return interaction.editReply({ embeds: [errEmbed('Only the presiding judge or an admin can end this case.')] });
 
-                const ok = await confirm(interaction, 'End Case', `Are you sure you want to end **${formatCaseId(c.case_number)}**?\nReason: ${reason}`);
+                const ok = await confirm(interaction, 'End Case', `End **${formatCaseId(c.case_number)}**?\n**Reason:** ${reason}`);
                 if (!ok) return;
 
                 await pool.query(`UPDATE cases SET status = 'CLOSED' WHERE id = $1`, [c.id]);
@@ -1477,10 +1436,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.neutral, 'Case Ended', `**${formatCaseId(c.case_number)}** has been closed by <@${interaction.user.id}>.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.neutral, '🔒 Case Ended', `**${formatCaseId(c.case_number)}** closed by <@${interaction.user.id}>.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_ENDED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Ended', `**${formatCaseId(c.case_number)}** has been closed.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Ended', `**${formatCaseId(c.case_number)}** has been closed.`)] });
             }
 
             // ================================================================
@@ -1495,7 +1454,7 @@ client.on('interactionCreate', async interaction => {
                 if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] });
                 if (c.judge_id !== interaction.user.id) return interaction.editReply({ embeds: [errEmbed('You are not the judge on this case.')] });
 
-                const ok = await confirm(interaction, 'Dismiss Case', `Are you sure you want to dismiss **${formatCaseId(c.case_number)}**?\nReason: ${reason}`);
+                const ok = await confirm(interaction, 'Dismiss Case', `Dismiss **${formatCaseId(c.case_number)}**?\n**Reason:** ${reason}`);
                 if (!ok) return;
 
                 await pool.query(`UPDATE cases SET status = 'DISMISSED' WHERE id = $1`, [c.id]);
@@ -1507,10 +1466,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.neutral, 'Case Dismissed', `**${formatCaseId(c.case_number)}** has been dismissed by the judge.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.neutral, '🚫 Case Dismissed', `**${formatCaseId(c.case_number)}** dismissed.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_DISMISSED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Dismissed', `**${formatCaseId(c.case_number)}** has been dismissed.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Dismissed', `**${formatCaseId(c.case_number)}** has been dismissed.`)] });
             }
 
             // ================================================================
@@ -1518,10 +1477,10 @@ client.on('interactionCreate', async interaction => {
             // ================================================================
             if (cmd === 'verdict') {
                 const config = await getConfig(guildId);
-                const caseInput       = interaction.options.getString('case_id');
-                const verdictValue    = interaction.options.getString('verdict');
-                const reason          = interaction.options.getString('reason');
-                const punishmentType  = interaction.options.getString('punishment_type');
+                const caseInput        = interaction.options.getString('case_id');
+                const verdictValue     = interaction.options.getString('verdict');
+                const reason           = interaction.options.getString('reason');
+                const punishmentType   = interaction.options.getString('punishment_type');
                 const punishmentLength = interaction.options.getString('punishment_length');
 
                 const c = await resolveCase(guildId, caseInput);
@@ -1529,7 +1488,6 @@ client.on('interactionCreate', async interaction => {
                 if (c.judge_id !== interaction.user.id) return interaction.editReply({ embeds: [errEmbed('You are not the judge on this case.')] });
                 if (c.status !== 'IN_PROGRESS') return interaction.editReply({ embeds: [errEmbed('Case must be IN_PROGRESS to set a verdict.')] });
 
-                // Validate punishment length if provided
                 if (punishmentType && punishmentLength) {
                     const pMs = parseDuration(punishmentLength);
                     if (pMs === null) return interaction.editReply({ embeds: [errEmbed('Invalid punishment duration. Use e.g. 1h, 7d, or perm.')] });
@@ -1546,22 +1504,21 @@ client.on('interactionCreate', async interaction => {
                 if (updated.case_channel_id) {
                     const ch = await guild.channels.fetch(updated.case_channel_id).catch(() => null);
                     if (ch) {
-                        const pLine = punishmentType ? `\n**Punishment:** \`${punishmentType}\` - ${punishmentLength || 'permanent'}` : '';
+                        const pLine = punishmentType ? `\n**⚡ Punishment:** \`${punishmentType}\` — ${punishmentLength || 'permanent'}` : '';
                         await ch.send({ embeds: [new EmbedBuilder()
                             .setColor(verdictValue === 'GUILTY' ? Colors.error : Colors.success)
-                            .setTitle(`Verdict - ${formatCaseId(c.case_number)}`)
+                            .setTitle(`🔨 Verdict — ${formatCaseId(c.case_number)}`)
                             .setDescription(`**Verdict:** \`${verdictValue}\`\n**Reason:** ${reason}${pLine}\n**Judge:** <@${interaction.user.id}>`)
                             .setTimestamp()
                         ] });
                     }
                 }
 
-                // Apply punishment if guilty
                 if (verdictValue === 'GUILTY' && punishmentType) {
                     await applyVerdictPunishment(guild, updated, config);
                 }
 
-                // Archive
+                // Archive (closes the case)
                 await pool.query(`UPDATE cases SET status = 'CLOSED' WHERE id = $1`, [c.id]);
                 const closed = await getCaseById(c.id);
                 const summary = buildSummaryEmbed(closed, `Verdict by <@${interaction.user.id}>`);
@@ -1569,16 +1526,16 @@ client.on('interactionCreate', async interaction => {
                 await updatePinnedEmbed(closed);
 
                 const participants = await getCaseParticipants(updated);
-                const pLine = punishmentType ? `\n**Punishment:** \`${punishmentType}\` - ${punishmentLength || 'permanent'}` : '';
+                const pLine = punishmentType ? `\n**⚡ Punishment:** \`${punishmentType}\` — ${punishmentLength || 'permanent'}` : '';
                 await dmAll(participants, new EmbedBuilder()
                     .setColor(verdictValue === 'GUILTY' ? Colors.error : Colors.success)
-                    .setTitle(`Verdict Set - ${formatCaseId(c.case_number)}`)
+                    .setTitle(`🔨 Verdict Set — ${formatCaseId(c.case_number)}`)
                     .setDescription(`**Verdict:** \`${verdictValue}\`\n**Reason:** ${reason}${pLine}`)
                     .setTimestamp()
                 );
 
                 await logAction(c.defendant_id, `VERDICT_${verdictValue}`, reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Verdict Set', `**${formatCaseId(c.case_number)}** - \`${verdictValue}\`. Case archived.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Verdict Set', `**${formatCaseId(c.case_number)}** — \`${verdictValue}\`. Case archived.`)] });
             }
 
             // ================================================================
@@ -1593,7 +1550,7 @@ client.on('interactionCreate', async interaction => {
                 if (!member) return interaction.editReply({ embeds: [errEmbed('Member not found.')] });
                 await member.roles.add(config.judge_role_id);
                 await logAction(user.id, 'JUDGE_ASSIGNED', null, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Judge Role Assigned', `<@${user.id}> is now a judge.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Judge Role Assigned', `<@${user.id}> is now a judge.`)] });
             }
 
             // ================================================================
@@ -1608,7 +1565,7 @@ client.on('interactionCreate', async interaction => {
                 if (!member) return interaction.editReply({ embeds: [errEmbed('Member not found.')] });
                 await member.roles.remove(config.judge_role_id);
                 await logAction(user.id, 'JUDGE_REVOKED', null, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Judge Role Revoked', `<@${user.id}> is no longer a judge.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Judge Role Revoked', `<@${user.id}> is no longer a judge.`)] });
             }
 
             // ================================================================
@@ -1629,7 +1586,6 @@ client.on('interactionCreate', async interaction => {
                 const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
                 if (!member) return interaction.editReply({ embeds: [errEmbed('Member not found.')] });
 
-                // Check not already jailed
                 const { rows: jailCheck } = await pool.query(
                     'SELECT id FROM jailed_users WHERE guild_id = $1 AND user_id = $2',
                     [guildId, targetUser.id]
@@ -1639,10 +1595,12 @@ client.on('interactionCreate', async interaction => {
                 await jailUser(interaction.guild, member, interaction.user.id, reason, durationMs, config);
 
                 const durationStr = durationMs === -1 ? 'Permanent' : msToHuman(durationMs);
-                await dmUser(targetUser.id, simpleEmbed(Colors.error, 'You Have Been Jailed', `You were jailed in **${interaction.guild.name}**.\n**Reason:** ${reason}\n**Duration:** ${durationStr}`));
+                await dmUser(targetUser.id, simpleEmbed(Colors.error, '🔒 You Have Been Jailed',
+                    `You were jailed in **${interaction.guild.name}**.\n**Reason:** ${reason}\n**Duration:** ${durationStr}`
+                ));
 
                 await logAction(targetUser.id, 'JAILED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'User Jailed', `<@${targetUser.id}> has been jailed.\n**Duration:** ${durationStr}\n**Reason:** ${reason}`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ User Jailed', `<@${targetUser.id}> jailed.\n**Duration:** ${durationStr}\n**Reason:** ${reason}`)] });
             }
 
             // ================================================================
@@ -1655,21 +1613,20 @@ client.on('interactionCreate', async interaction => {
 
                 await unjailUser(interaction.guild, targetUser.id, config);
 
-                await dmUser(targetUser.id, simpleEmbed(Colors.success, 'Released from Jail', `You have been released in **${interaction.guild.name}**.`));
-
+                await dmUser(targetUser.id, simpleEmbed(Colors.success, '🔓 Released from Jail', `You have been released in **${interaction.guild.name}**.`));
                 await logAction(targetUser.id, 'UNJAILED', 'Manual release by admin.', interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'User Released', `<@${targetUser.id}> has been released from jail.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ User Released', `<@${targetUser.id}> has been released from jail.`)] });
             }
 
-            // ================================================================
-            // /transfercase /forcestart /setstatus /editcase are in commands.js
-            // ================================================================
-            const handled = await registerCommands2(interaction, cmd, guildId, isAdmin);
+            // Route remaining commands to Part 2 handler
+            const handled = await handleCommands2(interaction, cmd, guildId, isAdmin);
             if (!handled) return interaction.editReply({ embeds: [errEmbed('Unknown command.')] });
 
         } catch (error) {
             console.error('Command error:', error);
-            return interaction.editReply({ embeds: [errEmbed(`An unexpected error occurred.\n\`${error.message}\``)] });
+            try {
+                await interaction.editReply({ embeds: [errEmbed(`An unexpected error occurred.\n\`\`\`${error.message}\`\`\``)] });
+            } catch { /* interaction may have expired */ }
         }
     }
 
@@ -1677,7 +1634,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         const id = interaction.customId;
 
-        // Setup wizard init buttons
+        // Setup wizard buttons
         if (id === 'setup_start' || id === 'setup_close') {
             const session = setupSessions.get(interaction.user.id);
             if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
@@ -1689,6 +1646,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             if (id === 'setup_start') {
+                // Show modal directly from the button interaction — this is correct
                 const modal = buildSetupModal(1, session.values);
                 await interaction.showModal(modal);
                 return;
@@ -1697,37 +1655,43 @@ client.on('interactionCreate', async interaction => {
 
         // Lawyer accept/decline buttons (sent via DM)
         if (id.startsWith('accept_lawyer_') || id.startsWith('decline_lawyer_')) {
-            const parts = id.split('_');
-            const action = parts[0];
-            const caseDbId = parseInt(parts[2]);
-            const side = parts[3];
+            try {
+                const parts = id.split('_');
+                // id format: accept_lawyer_{caseDbId}_{side}  or  decline_lawyer_{caseDbId}_{side}
+                const action = parts[0]; // 'accept' or 'decline'
+                const caseDbId = parseInt(parts[2]);
+                const side = parts[3];
 
-            const c = await getCaseById(caseDbId);
-            if (!c) return interaction.reply({ content: 'Case not found or already closed.', ephemeral: true });
+                const c = await getCaseById(caseDbId);
+                if (!c) return interaction.update({ content: 'Case not found or already closed.', components: [], embeds: [] });
 
-            const { rows: reqRows } = await pool.query(
-                `SELECT * FROM lawyer_requests WHERE case_id = $1 AND requested_id = $2 AND side = $3 AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1`,
-                [c.id, interaction.user.id, side]
-            );
+                const { rows: reqRows } = await pool.query(
+                    `SELECT * FROM lawyer_requests WHERE case_id = $1 AND requested_id = $2 AND side = $3 AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1`,
+                    [c.id, interaction.user.id, side]
+                );
 
-            if (!reqRows.length) return interaction.update({ content: 'This request is no longer valid.', components: [], embeds: [] });
-            const req = reqRows[0];
+                if (!reqRows.length) return interaction.update({ content: 'This request is no longer valid.', components: [], embeds: [] });
+                const req = reqRows[0];
 
-            if (action === 'accept') {
-                const guild = client.guilds.cache.get(c.guild_id);
-                if (!guild) return interaction.update({ content: 'Could not find the server.', components: [], embeds: [] });
-                await _assignLawyer(c, req, interaction.user.id, guild);
-                await pool.query(`UPDATE lawyer_requests SET status = 'ACCEPTED' WHERE id = $1`, [req.id]);
-                await interaction.update({ embeds: [simpleEmbed(Colors.success, 'Accepted', `You are now the ${side} lawyer for **${formatCaseId(c.case_number)}**.`)], components: [] });
-            } else {
-                await pool.query(`UPDATE lawyer_requests SET status = 'DECLINED' WHERE id = $1`, [req.id]);
-                await dmUser(req.requester_id, simpleEmbed(Colors.warn, 'Lawyer Request Declined', `<@${interaction.user.id}> declined your lawyer request for **${formatCaseId(c.case_number)}** (${side}).`));
-                const guild = client.guilds.cache.get(c.guild_id);
-                if (guild && c.case_channel_id) {
-                    const ch = await guild.channels.fetch(c.case_channel_id).catch(() => null);
-                    if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, 'Lawyer Request Declined', `<@${interaction.user.id}> has declined the lawyer request for the ${side}.`)] });
+                if (action === 'accept') {
+                    const guild = client.guilds.cache.get(c.guild_id);
+                    if (!guild) return interaction.update({ content: 'Could not find the server.', components: [], embeds: [] });
+                    await _assignLawyer(c, req, interaction.user.id, guild);
+                    await pool.query(`UPDATE lawyer_requests SET status = 'ACCEPTED' WHERE id = $1`, [req.id]);
+                    await interaction.update({ embeds: [simpleEmbed(Colors.success, '✅ Accepted', `You are now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)], components: [] });
+                } else {
+                    await pool.query(`UPDATE lawyer_requests SET status = 'DECLINED' WHERE id = $1`, [req.id]);
+                    await dmUser(req.requester_id, simpleEmbed(Colors.warn, 'Lawyer Request Declined', `<@${interaction.user.id}> declined your lawyer request for **${formatCaseId(c.case_number)}** (${side}).`));
+                    const guild = client.guilds.cache.get(c.guild_id);
+                    if (guild && c.case_channel_id) {
+                        const ch = await guild.channels.fetch(c.case_channel_id).catch(() => null);
+                        if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, 'Lawyer Request Declined', `<@${interaction.user.id}> declined the lawyer request for the ${side}.`)] });
+                    }
+                    await interaction.update({ embeds: [simpleEmbed(Colors.neutral, 'Declined', `You declined the lawyer request for **${formatCaseId(c.case_number)}**.`)], components: [] });
                 }
-                await interaction.update({ embeds: [simpleEmbed(Colors.neutral, 'Declined', `You declined the lawyer request for **${formatCaseId(c.case_number)}**.`)], components: [] });
+            } catch (e) {
+                console.error('Lawyer button error:', e);
+                await interaction.reply({ content: `Error: ${e.message}`, ephemeral: true }).catch(() => {});
             }
             return;
         }
@@ -1738,78 +1702,100 @@ client.on('interactionCreate', async interaction => {
         const id = interaction.customId;
 
         if (id === 'setup_modal_1') {
-            const session = setupSessions.get(interaction.user.id);
-            if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
+            try {
+                const session = setupSessions.get(interaction.user.id);
+                if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
 
-            for (const step of SETUP_STEPS_1) {
-                const val = interaction.fields.getTextInputValue(step.key).trim();
-                if (val) session.values[step.key] = val;
+                for (const step of SETUP_STEPS_1) {
+                    const val = interaction.fields.getTextInputValue(step.key).trim();
+                    if (val) session.values[step.key] = val;
+                }
+                setupSessions.set(interaction.user.id, session);
+
+                // Show modal 2 from the modal-1 submit interaction
+                const modal2 = buildSetupModal(2, session.values);
+                await interaction.showModal(modal2);
+            } catch (e) {
+                console.error('Setup modal 1 error:', e);
+                await interaction.reply({ content: `Setup error: ${e.message}`, ephemeral: true }).catch(() => {});
             }
-
-            setupSessions.set(interaction.user.id, session);
-
-            // Show modal 2
-            const modal2 = buildSetupModal(2, session.values);
-            await interaction.showModal(modal2);
             return;
         }
 
         if (id === 'setup_modal_2') {
-            const session = setupSessions.get(interaction.user.id);
-            if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
+            try {
+                const session = setupSessions.get(interaction.user.id);
+                if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
 
-            for (const step of SETUP_STEPS_2) {
-                const val = interaction.fields.getTextInputValue(step.key).trim();
-                if (val) session.values[step.key] = val;
+                for (const step of SETUP_STEPS_2) {
+                    const val = interaction.fields.getTextInputValue(step.key).trim();
+                    if (val) session.values[step.key] = val;
+                }
+
+                const v = session.values;
+
+                await pool.query(`
+                    INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, judge_chat_name, court_records_name, jury_chat_name, case_channel_format, archive_channel_format, judge_role_id, jail_role_id, slowmode_value)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                    ON CONFLICT (guild_id) DO UPDATE SET
+                        court_category_id = $2, archive_category_id = $3, judge_chat_name = $4,
+                        court_records_name = $5, jury_chat_name = $6, case_channel_format = $7,
+                        archive_channel_format = $8, judge_role_id = $9, jail_role_id = $10, slowmode_value = $11
+                `, [
+                    session.guildId,
+                    v.court_category_id      || null,
+                    v.archive_category_id    || null,
+                    v.judge_chat_name        || 'judge-chat',
+                    v.court_records_name     || 'court-records',
+                    v.jury_chat_name         || 'jury-chat',
+                    v.case_channel_format    || 'courtcase-{case_id}',
+                    v.archive_channel_format || 'case-{case_id}-archive',
+                    v.judge_role_id          || null,
+                    v.jail_role_id           || null,
+                    parseInt(v.slowmode_value) || 0,
+                ]);
+
+                setupSessions.delete(interaction.user.id);
+
+                const savedConfig = await getConfig(session.guildId);
+                const lines = [
+                    '✅ Court Bot is fully configured and ready!',
+                    '',
+                    `**🏛️ Court Category:** ${savedConfig.court_category_id ? `<#${savedConfig.court_category_id}>` : '❌ Not set'}`,
+                    `**📁 Archive Category:** ${savedConfig.archive_category_id ? `<#${savedConfig.archive_category_id}>` : '❌ Not set'}`,
+                    `**⚖️ Judge Role:** ${savedConfig.judge_role_id ? `<@&${savedConfig.judge_role_id}>` : '❌ Not set'}`,
+                    `**🔒 Jail Role:** ${savedConfig.jail_role_id ? `<@&${savedConfig.jail_role_id}>` : '❌ Not set'}`,
+                    `**📝 Case Channel Format:** \`${savedConfig.case_channel_format}\``,
+                    `**⏱️ Slowmode:** \`${savedConfig.slowmode_value || 0}s\``,
+                ];
+
+                await interaction.reply({
+                    embeds: [infoEmbed(Colors.success, '⚙️ Setup Complete', lines)],
+                    ephemeral: true
+                });
+            } catch (e) {
+                console.error('Setup modal 2 error:', e);
+                await interaction.reply({ content: `Setup save error: ${e.message}`, ephemeral: true }).catch(() => {});
             }
-
-            const v = session.values;
-
-            await pool.query(`
-                INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, judge_chat_name, court_records_name, jury_chat_name, case_channel_format, archive_channel_format, judge_role_id, jail_role_id, slowmode_value)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-                ON CONFLICT (guild_id) DO UPDATE SET
-                    court_category_id = $2, archive_category_id = $3, judge_chat_name = $4,
-                    court_records_name = $5, jury_chat_name = $6, case_channel_format = $7,
-                    archive_channel_format = $8, judge_role_id = $9, jail_role_id = $10, slowmode_value = $11
-            `, [
-                session.guildId,
-                v.court_category_id || null,
-                v.archive_category_id || null,
-                v.judge_chat_name || 'judge-chat',
-                v.court_records_name || 'court-records',
-                v.jury_chat_name || 'jury-chat',
-                v.case_channel_format || 'courtcase-{case_id}',
-                v.archive_channel_format || 'case-{case_id}-archive',
-                v.judge_role_id || null,
-                v.jail_role_id || null,
-                parseInt(v.slowmode_value) || 0,
-            ]);
-
-            setupSessions.delete(interaction.user.id);
-            await interaction.reply({ embeds: [simpleEmbed(Colors.success, 'Setup Complete', 'Court bot is fully configured and ready!')], ephemeral: true });
             return;
         }
     }
 });
 
 // ============================================================
-// --- ROLE RESTORATION GUARD ---
-// Detects if a jailed user's jail role is manually removed
-// and immediately re-applies it unless the bot is releasing them.
+// ROLE RESTORATION GUARD
 // ============================================================
 
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
     const guildId = newMember.guild.id;
     const userId = newMember.id;
 
-    // Check if this user is in the jailed_users DB
     const { rows } = await pool.query(
         'SELECT * FROM jailed_users WHERE guild_id = $1 AND user_id = $2',
         [guildId, userId]
     ).catch(() => ({ rows: [] }));
 
-    if (!rows.length) return; // Not jailed, nothing to do
+    if (!rows.length) return;
 
     const config = await getConfig(guildId).catch(() => null);
     if (!config?.jail_role_id) return;
@@ -1817,9 +1803,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     const hadJailRole = oldMember.roles.cache.has(config.jail_role_id);
     const hasJailRole = newMember.roles.cache.has(config.jail_role_id);
 
-    // If jail role was removed but the bot didn't initiate it (record still exists)
     if (hadJailRole && !hasJailRole) {
-        // Re-apply jail role immediately
         await newMember.roles.add(config.jail_role_id, 'Jail role re-applied: user still jailed.').catch(e => {
             console.error(`Failed to re-apply jail role for ${userId}:`, e.message);
         });
@@ -1827,7 +1811,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
 });
 
 // ============================================================
-// --- MESSAGE HANDLER (Evidence Logging) ---
+// MESSAGE HANDLER (Evidence Logging)
 // ============================================================
 
 client.on('messageCreate', async message => {
@@ -1861,9 +1845,925 @@ client.on('messageCreate', async message => {
     const updated = await getCaseById(c.id);
     await updatePinnedEmbed(updated);
 });
+// ============================================================
+// courtbot.js - PART 2 OF 2  (paste directly after Part 1)
+// Lawyer, jury, evidence, info/stats, and admin override commands.
+// ============================================================
+
+async function handleCommands2(interaction, cmd, guildId, isAdmin) {
+
+    // ================================================================
+    // /transfercase
+    // ================================================================
+    if (cmd === 'transfercase') {
+        if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+        const caseInput = interaction.options.getString('case_id');
+        const newJudgeUser = interaction.options.getUser('new_judge');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (['CLOSED','CANCELLED','DISMISSED'].includes(c.status))
+            return interaction.editReply({ embeds: [errEmbed('Cannot transfer a closed case.')] }), true;
+
+        const config = await getConfig(guildId);
+        if (config?.judge_role_id) {
+            const newMember = await interaction.guild.members.fetch(newJudgeUser.id).catch(() => null);
+            if (newMember && !newMember.roles.cache.has(config.judge_role_id))
+                return interaction.editReply({ embeds: [errEmbed(`<@${newJudgeUser.id}> does not have the Judge role.`)] }), true;
+        }
+
+        if (await isJudgeOnActiveCase(guildId, newJudgeUser.id))
+            return interaction.editReply({ embeds: [errEmbed(`<@${newJudgeUser.id}> is already the judge on another active case.`)] }), true;
+
+        const oldJudgeId = c.judge_id;
+        await pool.query('UPDATE cases SET judge_id = $1 WHERE id = $2', [newJudgeUser.id, c.id]);
+        const updated = await getCaseById(c.id);
+
+        const guild = interaction.guild;
+
+        if (updated.case_channel_id) {
+            const ch = await guild.channels.fetch(updated.case_channel_id).catch(() => null);
+            if (ch) {
+                await addParticipantToChannel(ch, newJudgeUser.id);
+                if (oldJudgeId) await removeParticipantFromChannel(ch, oldJudgeId);
+            }
+        }
+        if (updated.judge_chat_channel_id) {
+            const jch = await guild.channels.fetch(updated.judge_chat_channel_id).catch(() => null);
+            if (jch) {
+                await addParticipantToChannel(jch, newJudgeUser.id);
+                if (oldJudgeId) await removeParticipantFromChannel(jch, oldJudgeId);
+            }
+        }
+        if (updated.jury_chat_channel_id) {
+            const jrch = await guild.channels.fetch(updated.jury_chat_channel_id).catch(() => null);
+            if (jrch) {
+                await addParticipantToChannel(jrch, newJudgeUser.id);
+                if (oldJudgeId) await removeParticipantFromChannel(jrch, oldJudgeId);
+            }
+        }
+
+        await updatePinnedEmbed(updated);
+
+        const participants = await getCaseParticipants(updated);
+        await dmAll(participants, simpleEmbed(Colors.info, '⚖️ Judge Transferred',
+            `**${formatCaseId(c.case_number)}** transferred from ${oldJudgeId ? `<@${oldJudgeId}>` : '*none*'} to <@${newJudgeUser.id}>.`
+        ));
+
+        await logAction(newJudgeUser.id, 'JUDGE_TRANSFERRED', formatCaseId(c.case_number), interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Transferred', `**${formatCaseId(c.case_number)}** is now under judge <@${newJudgeUser.id}>.`)] }), true;
+    }
+
+    // ================================================================
+    // /forcestart
+    // ================================================================
+    if (cmd === 'forcestart') {
+        if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+        const caseInput = interaction.options.getString('case_id');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (['CLOSED','CANCELLED','DISMISSED','IN_PROGRESS'].includes(c.status))
+            return interaction.editReply({ embeds: [errEmbed(`Cannot force-start a case with status: ${c.status}.`)] }), true;
+
+        if (activeTimers.has(`case_${c.id}`)) {
+            clearTimeout(activeTimers.get(`case_${c.id}`));
+            activeTimers.delete(`case_${c.id}`);
+        }
+
+        await pool.query(`UPDATE cases SET status = 'IN_PROGRESS', started_at = NOW() WHERE id = $1`, [c.id]);
+        const updated = await getCaseById(c.id);
+
+        if (updated.case_channel_id) {
+            const ch = await client.channels.fetch(updated.case_channel_id).catch(() => null);
+            if (ch) {
+                await ch.send({ embeds: [simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session (Force Started)',
+                    `${formatCaseId(updated.case_number)} has been force-started by an admin. All parties, please take your positions.`
+                )] });
+            }
+        }
+
+        await updatePinnedEmbed(updated);
+
+        const participants = await getCaseParticipants(updated);
+        await dmAll(participants, simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `**${formatCaseId(updated.case_number)}** has been force-started.`));
+
+        await logAction(guildId, 'CASE_FORCE_STARTED', formatCaseId(updated.case_number), interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Force Started', `**${formatCaseId(c.case_number)}** is now IN_PROGRESS.`)] }), true;
+    }
+
+    // ================================================================
+    // /setstatus
+    // ================================================================
+    if (cmd === 'setstatus') {
+        if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+        const caseInput = interaction.options.getString('case_id');
+        const newStatus = interaction.options.getString('status');
+
+        // resolveCase with allowClosed=true so we can update any case
+        let c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        await pool.query('UPDATE cases SET status = $1 WHERE id = $2', [newStatus, c.id]);
+        const updated = await getCaseById(c.id);
+        await updatePinnedEmbed(updated);
+        await logAction(interaction.user.id, 'STATUS_OVERRIDE', `${formatCaseId(c.case_number)} -> ${newStatus}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Status Updated', `**${formatCaseId(c.case_number)}** status set to \`${newStatus}\`.`)] }), true;
+    }
+
+    // ================================================================
+    // /editcase
+    // ================================================================
+    if (cmd === 'editcase') {
+        if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+        const caseInput = interaction.options.getString('case_id');
+        const field = interaction.options.getString('field');
+        const value = interaction.options.getString('value');
+
+        const ALLOWED_FIELDS = ['reason', 'verdict_reason', 'punishment_type', 'punishment_length'];
+        if (!ALLOWED_FIELDS.includes(field))
+            return interaction.editReply({ embeds: [errEmbed(`Invalid field. Allowed: ${ALLOWED_FIELDS.join(', ')}.`)] }), true;
+
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        if (field === 'punishment_type') {
+            const validTypes = ['MUTE', 'BAN', 'KICK', 'JAIL'];
+            if (!validTypes.includes(value.toUpperCase()))
+                return interaction.editReply({ embeds: [errEmbed(`Invalid punishment type. Allowed: ${validTypes.join(', ')}.`)] }), true;
+        }
+
+        if (field === 'punishment_length' && value.toLowerCase() !== 'perm') {
+            if (parseDuration(value) === null)
+                return interaction.editReply({ embeds: [errEmbed('Invalid punishment length. Use e.g. 1h, 7d, or perm.')] }), true;
+        }
+
+        await pool.query(`UPDATE cases SET ${field} = $1 WHERE id = $2`, [value, c.id]);
+        const updated = await getCaseById(c.id);
+        await updatePinnedEmbed(updated);
+
+        await logAction(interaction.user.id, 'CASE_EDITED', `${formatCaseId(c.case_number)}.${field} = ${value}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Edited', `**${formatCaseId(c.case_number)}** field \`${field}\` → \`${value}\``)] }), true;
+    }
+
+    // ================================================================
+    // /requestlawyer
+    // ================================================================
+    if (cmd === 'requestlawyer') {
+        const caseInput = interaction.options.getString('case_id');
+        const targetUser = interaction.options.getUser('user');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const isProsecutor = c.prosecutor_id === interaction.user.id;
+        const isDefendant  = c.defendant_id  === interaction.user.id;
+        if (!isProsecutor && !isDefendant)
+            return interaction.editReply({ embeds: [errEmbed('Only the prosecutor or defendant can request a lawyer.')] }), true;
+
+        const side = isProsecutor ? 'prosecution' : 'defense';
+        const alreadyHas = isProsecutor ? c.prosecutor_lawyer_id : c.defense_lawyer_id;
+        if (alreadyHas) return interaction.editReply({ embeds: [errEmbed('You already have a lawyer assigned.')] }), true;
+
+        if (targetUser.id === c.prosecutor_id || targetUser.id === c.defendant_id)
+            return interaction.editReply({ embeds: [errEmbed('A case participant cannot be a lawyer.')] }), true;
+        if (targetUser.bot)
+            return interaction.editReply({ embeds: [errEmbed('A bot cannot be a lawyer.')] }), true;
+        if (targetUser.id === interaction.user.id)
+            return interaction.editReply({ embeds: [errEmbed('You cannot request yourself as your lawyer.')] }), true;
+
+        if (await isLawyerOnActiveCase(guildId, targetUser.id))
+            return interaction.editReply({ embeds: [errEmbed(`<@${targetUser.id}> is already a lawyer on another active case.`)] }), true;
+
+        const { rows: existingReq } = await pool.query(
+            `SELECT * FROM lawyer_requests WHERE case_id = $1 AND side = $2 AND status = 'PENDING'`,
+            [c.id, side]
+        );
+        if (existingReq.length)
+            return interaction.editReply({ embeds: [errEmbed('There is already a pending lawyer request for this side.')] }), true;
+
+        await pool.query(
+            `INSERT INTO lawyer_requests (case_id, requester_id, requested_id, side) VALUES ($1, $2, $3, $4)`,
+            [c.id, interaction.user.id, targetUser.id, side]
+        );
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) {
+                await ch.send({ embeds: [simpleEmbed(Colors.info, '⚖️ Lawyer Requested',
+                    `<@${interaction.user.id}> has requested <@${targetUser.id}> as their **${side}** lawyer.\nAwaiting response.`
+                )] });
+            }
+        }
+
+        const dmEmbed = new EmbedBuilder()
+            .setColor(Colors.info)
+            .setTitle('⚖️ Lawyer Request')
+            .setDescription(
+                `<@${interaction.user.id}> is requesting you as the **${side}** lawyer for ` +
+                `**${formatCaseId(c.case_number)}** in **${interaction.guild.name}**.\n\n` +
+                `Use \`/acceptlawyer ${c.case_number}\` or \`/declinelawyer ${c.case_number}\`, ` +
+                `or click the buttons below.`
+            )
+            .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`accept_lawyer_${c.id}_${side}`).setLabel('✅ Accept').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`decline_lawyer_${c.id}_${side}`).setLabel('❌ Decline').setStyle(ButtonStyle.Danger),
+        );
+
+        try {
+            const dmChannel = await targetUser.createDM();
+            await dmChannel.send({ embeds: [dmEmbed], components: [row] });
+        } catch { /* DMs closed */ }
+
+        await logAction(targetUser.id, 'LAWYER_REQUESTED', `${side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Requested', `Request sent to <@${targetUser.id}>.`)] }), true;
+    }
+
+    // ================================================================
+    // /revokelawyer
+    // ================================================================
+    if (cmd === 'revokelawyer') {
+        const caseInput = interaction.options.getString('case_id');
+        const reason = interaction.options.getString('reason');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const isProsecutor = c.prosecutor_id === interaction.user.id;
+        const isDefendant  = c.defendant_id  === interaction.user.id;
+        if (!isProsecutor && !isDefendant && !isAdmin)
+            return interaction.editReply({ embeds: [errEmbed('Only the prosecutor, defendant, or an admin can revoke a lawyer.')] }), true;
+
+        // Determine which side to revoke
+        let lawyerId, field;
+        if (isProsecutor) {
+            if (!c.prosecutor_lawyer_id) return interaction.editReply({ embeds: [errEmbed('You have no lawyer assigned on the prosecution side.')] }), true;
+            lawyerId = c.prosecutor_lawyer_id;
+            field = 'prosecutor_lawyer_id';
+        } else if (isDefendant) {
+            if (!c.defense_lawyer_id) return interaction.editReply({ embeds: [errEmbed('You have no lawyer assigned on the defense side.')] }), true;
+            lawyerId = c.defense_lawyer_id;
+            field = 'defense_lawyer_id';
+        } else if (isAdmin) {
+            // Admin: prefer prosecution if both exist, unless only defense has one
+            if (c.prosecutor_lawyer_id) {
+                lawyerId = c.prosecutor_lawyer_id;
+                field = 'prosecutor_lawyer_id';
+            } else if (c.defense_lawyer_id) {
+                lawyerId = c.defense_lawyer_id;
+                field = 'defense_lawyer_id';
+            } else {
+                return interaction.editReply({ embeds: [errEmbed('No lawyers are currently assigned on either side.')] }), true;
+            }
+        }
+
+        await pool.query(`UPDATE cases SET ${field} = NULL WHERE id = $1`, [c.id]);
+
+        const updated = await getCaseById(c.id);
+        // Demote status if scheduled/assigned since a lawyer slot is now empty
+        if (['SCHEDULED', 'ASSIGNED'].includes(updated.status)) {
+            await pool.query(`UPDATE cases SET status = 'WAITING_LAWYERS' WHERE id = $1`, [c.id]);
+            if (activeTimers.has(`case_${c.id}`)) {
+                clearTimeout(activeTimers.get(`case_${c.id}`));
+                activeTimers.delete(`case_${c.id}`);
+            }
+        }
+
+        const final = await getCaseById(c.id);
+        await updatePinnedEmbed(final);
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) await removeParticipantFromChannel(ch, lawyerId);
+        }
+
+        await dmUser(lawyerId, simpleEmbed(Colors.warn, '⚠️ Lawyer Revoked',
+            `You have been removed as a lawyer from **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
+        ));
+
+        const participants = await getCaseParticipants(final);
+        await dmAll(participants.filter(id => id !== lawyerId), simpleEmbed(Colors.warn, '⚠️ Lawyer Revoked',
+            `<@${lawyerId}> has been removed as the **${field === 'prosecutor_lawyer_id' ? 'prosecution' : 'defense'}** lawyer from **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
+        ));
+
+        await logAction(lawyerId, 'LAWYER_REVOKED', reason, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Revoked', `<@${lawyerId}> has been removed.`)] }), true;
+    }
+
+    // ================================================================
+    // /acceptlawyer
+    // ================================================================
+    if (cmd === 'acceptlawyer') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const { rows: reqRows } = await pool.query(
+            `SELECT * FROM lawyer_requests WHERE case_id = $1 AND requested_id = $2 AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1`,
+            [c.id, interaction.user.id]
+        );
+        if (!reqRows.length) return interaction.editReply({ embeds: [errEmbed('No pending lawyer request for you on this case.')] }), true;
+        const req = reqRows[0];
+
+        if (await isLawyerOnActiveCase(guildId, interaction.user.id))
+            return interaction.editReply({ embeds: [errEmbed('You are already a lawyer on another active case.')] }), true;
+
+        await _assignLawyer(c, req, interaction.user.id, interaction.guild);
+        await pool.query(`UPDATE lawyer_requests SET status = 'ACCEPTED' WHERE id = $1`, [req.id]);
+
+        await logAction(interaction.user.id, 'LAWYER_ACCEPTED', `${req.side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Accepted', `You are now the **${req.side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
+    }
+
+    // ================================================================
+    // /declinelawyer
+    // ================================================================
+    if (cmd === 'declinelawyer') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const { rows: reqRows } = await pool.query(
+            `SELECT * FROM lawyer_requests WHERE case_id = $1 AND requested_id = $2 AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1`,
+            [c.id, interaction.user.id]
+        );
+        if (!reqRows.length) return interaction.editReply({ embeds: [errEmbed('No pending lawyer request for you on this case.')] }), true;
+        const req = reqRows[0];
+
+        await pool.query(`UPDATE lawyer_requests SET status = 'DECLINED' WHERE id = $1`, [req.id]);
+
+        await dmUser(req.requester_id, simpleEmbed(Colors.warn, 'Lawyer Request Declined',
+            `<@${interaction.user.id}> has declined your lawyer request for **${formatCaseId(c.case_number)}** (${req.side}).`
+        ));
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, 'Lawyer Request Declined',
+                `<@${interaction.user.id}> declined the **${req.side}** lawyer request.`
+            )] });
+        }
+
+        await logAction(interaction.user.id, 'LAWYER_DECLINED', `${req.side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Request Declined', `You declined the lawyer request for **${formatCaseId(c.case_number)}**.`)] }), true;
+    }
+
+    // ================================================================
+    // /replacelawyer
+    // ================================================================
+    if (cmd === 'replacelawyer') {
+        if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+        const caseInput = interaction.options.getString('case_id');
+        const side = interaction.options.getString('side');
+        const newLawyerUser = interaction.options.getUser('user');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (['CLOSED','CANCELLED','DISMISSED'].includes(c.status))
+            return interaction.editReply({ embeds: [errEmbed('Cannot modify a closed case.')] }), true;
+
+        if (newLawyerUser.id === c.prosecutor_id || newLawyerUser.id === c.defendant_id)
+            return interaction.editReply({ embeds: [errEmbed('A case participant cannot be a lawyer.')] }), true;
+        if (newLawyerUser.bot)
+            return interaction.editReply({ embeds: [errEmbed('A bot cannot be a lawyer.')] }), true;
+
+        if (await isLawyerOnActiveCase(guildId, newLawyerUser.id))
+            return interaction.editReply({ embeds: [errEmbed(`<@${newLawyerUser.id}> is already a lawyer on another active case.`)] }), true;
+
+        const field = side === 'prosecution' ? 'prosecutor_lawyer_id' : 'defense_lawyer_id';
+        const oldLawyerId = side === 'prosecution' ? c.prosecutor_lawyer_id : c.defense_lawyer_id;
+
+        await pool.query(`UPDATE cases SET ${field} = $1 WHERE id = $2`, [newLawyerUser.id, c.id]);
+        const updated = await getCaseById(c.id);
+
+        const guild = interaction.guild;
+
+        if (c.case_channel_id) {
+            const ch = await guild.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) {
+                if (oldLawyerId) await removeParticipantFromChannel(ch, oldLawyerId);
+                await addParticipantToChannel(ch, newLawyerUser.id);
+            }
+        }
+
+        // Promote status if now fully staffed
+        if (updated.prosecutor_lawyer_id && updated.defense_lawyer_id && updated.judge_id && updated.status === 'WAITING_LAWYERS') {
+            await pool.query(`UPDATE cases SET status = 'ASSIGNED' WHERE id = $1`, [updated.id]);
+        }
+
+        const final = await getCaseById(c.id);
+        await updatePinnedEmbed(final);
+
+        if (oldLawyerId) {
+            await dmUser(oldLawyerId, simpleEmbed(Colors.warn, '⚠️ Lawyer Replaced',
+                `You have been replaced as the **${side}** lawyer in **${formatCaseId(c.case_number)}**.`
+            ));
+        }
+        await dmUser(newLawyerUser.id, simpleEmbed(Colors.info, '⚖️ Lawyer Assigned',
+            `You have been assigned as the **${side}** lawyer in **${formatCaseId(c.case_number)}** by an admin.`
+        ));
+
+        const participants = await getCaseParticipants(final);
+        await dmAll(participants, simpleEmbed(Colors.info, '⚖️ Lawyer Replaced',
+            `The **${side}** lawyer for **${formatCaseId(c.case_number)}** is now <@${newLawyerUser.id}>.`
+        ));
+
+        await logAction(newLawyerUser.id, 'LAWYER_REPLACED', `${side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Replaced', `<@${newLawyerUser.id}> is now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
+    }
+
+    // ================================================================
+    // /joinjury
+    // ================================================================
+    if (cmd === 'joinjury') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (!['FILED','ASSIGNED','WAITING_LAWYERS','SCHEDULED'].includes(c.status))
+            return interaction.editReply({ embeds: [errEmbed('Jury can only join before the case starts.')] }), true;
+
+        const userId = interaction.user.id;
+        if ([c.prosecutor_id, c.defendant_id, c.judge_id, c.prosecutor_lawyer_id, c.defense_lawyer_id].filter(Boolean).includes(userId))
+            return interaction.editReply({ embeds: [errEmbed('Case participants cannot join the jury.')] }), true;
+
+        if (await isJurorOnActiveCase(guildId, userId))
+            return interaction.editReply({ embeds: [errEmbed('You are already a juror on another active case.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        if (jury.length >= MAX_JURY)
+            return interaction.editReply({ embeds: [errEmbed(`The jury is full (max ${MAX_JURY}).`)] }), true;
+        if (jury.some(j => j.user_id === userId))
+            return interaction.editReply({ embeds: [errEmbed('You are already on the jury.')] }), true;
+
+        await pool.query('INSERT INTO jury_members (case_id, user_id) VALUES ($1, $2)', [c.id, userId]);
+
+        if (c.jury_chat_channel_id) {
+            const jch = await client.channels.fetch(c.jury_chat_channel_id).catch(() => null);
+            if (jch) await addParticipantToChannel(jch, userId);
+        }
+
+        const updated = await getCaseById(c.id);
+        await updatePinnedEmbed(updated);
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.success, '🗳️ Juror Joined',
+                `<@${userId}> has joined the jury for **${formatCaseId(c.case_number)}**. (${jury.length + 1}/${MAX_JURY})`
+            )] });
+        }
+
+        await logAction(userId, 'JURY_JOINED', formatCaseId(c.case_number), userId);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Joined Jury', `You are now on the jury for **${formatCaseId(c.case_number)}**.`)] }), true;
+    }
+
+    // ================================================================
+    // /kickjuror
+    // ================================================================
+    if (cmd === 'kickjuror') {
+        const caseInput = interaction.options.getString('case_id');
+        const targetUser = interaction.options.getUser('user');
+        const reason = interaction.options.getString('reason');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (c.judge_id !== interaction.user.id && !isAdmin)
+            return interaction.editReply({ embeds: [errEmbed('Only the presiding judge or an admin can kick a juror.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        const jurorRecord = jury.find(j => j.user_id === targetUser.id);
+        if (!jurorRecord) return interaction.editReply({ embeds: [errEmbed(`<@${targetUser.id}> is not on the jury for this case.`)] }), true;
+
+        await pool.query('DELETE FROM jury_members WHERE id = $1', [jurorRecord.id]);
+
+        if (c.jury_chat_channel_id) {
+            const jch = await client.channels.fetch(c.jury_chat_channel_id).catch(() => null);
+            if (jch) await removeParticipantFromChannel(jch, targetUser.id);
+        }
+
+        const updated = await getCaseById(c.id);
+        await updatePinnedEmbed(updated);
+
+        await dmUser(targetUser.id, simpleEmbed(Colors.warn, '⚠️ Removed from Jury',
+            `You have been removed from the jury for **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
+        ));
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, '🗳️ Juror Removed',
+                `<@${targetUser.id}> removed from the jury.\n**Reason:** ${reason}`
+            )] });
+        }
+
+        await logAction(targetUser.id, 'JUROR_KICKED', reason, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Juror Removed', `<@${targetUser.id}> has been removed from the jury.`)] }), true;
+    }
+
+    // ================================================================
+    // /vote
+    // ================================================================
+    if (cmd === 'vote') {
+        const caseInput = interaction.options.getString('case_id');
+        const voteValue = interaction.options.getString('vote');
+        const voteReason = interaction.options.getString('reason');
+
+        const c = await resolveCase(guildId, caseInput);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (c.status !== 'IN_PROGRESS')
+            return interaction.editReply({ embeds: [errEmbed('Voting is only allowed while the case is IN_PROGRESS.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        const member = jury.find(j => j.user_id === interaction.user.id);
+        if (!member) return interaction.editReply({ embeds: [errEmbed('You are not on the jury for this case.')] }), true;
+        if (member.vote) return interaction.editReply({ embeds: [errEmbed('You have already cast your vote.')] }), true;
+
+        await pool.query(
+            `UPDATE jury_members SET vote = $1, vote_reason = $2, voted_at = NOW() WHERE id = $3`,
+            [voteValue, voteReason, member.id]
+        );
+
+        // Notify jury chat that a vote was cast (without revealing what the vote was)
+        if (c.jury_chat_channel_id) {
+            const jch = await client.channels.fetch(c.jury_chat_channel_id).catch(() => null);
+            if (jch) {
+                const updatedJury = await getJuryMembers(c.id);
+                const voted = updatedJury.filter(j => j.vote).length;
+                await jch.send({ embeds: [simpleEmbed(Colors.info, '🗳️ Vote Cast',
+                    `<@${interaction.user.id}> has cast their vote. (${voted}/${updatedJury.length} voted)`
+                )] });
+            }
+        }
+
+        await logAction(interaction.user.id, `JURY_VOTE_${voteValue}`, formatCaseId(c.case_number), interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Vote Cast', 'Your vote has been recorded privately.')] }), true;
+    }
+
+    // ================================================================
+    // /jurytally
+    // ================================================================
+    if (cmd === 'jurytally') {
+        const caseInput = interaction.options.getString('case_id');
+
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (c.judge_id !== interaction.user.id && !isAdmin)
+            return interaction.editReply({ embeds: [errEmbed('Only the presiding judge or an admin can view the tally.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        const guilty    = jury.filter(j => j.vote === 'GUILTY').length;
+        const notGuilty = jury.filter(j => j.vote === 'NOT GUILTY').length;
+        const pending   = jury.filter(j => !j.vote).length;
+
+        const lines = [
+            `**Case:** \`${formatCaseId(c.case_number)}\``,
+            `**Total Jurors:** ${jury.length}`,
+            '',
+            `✅ **Guilty:** ${guilty}`,
+            `❌ **Not Guilty:** ${notGuilty}`,
+            `⏳ **Pending:** ${pending}`,
+        ];
+
+        if (jury.length) {
+            lines.push('');
+            lines.push('**Individual Votes:**');
+            for (const j of jury) {
+                const voteDisplay = j.vote
+                    ? (j.vote === 'GUILTY' ? '✅ `GUILTY`' : '❌ `NOT GUILTY`')
+                    : '⏳ *Not yet voted*';
+                lines.push(`<@${j.user_id}>: ${voteDisplay}${j.vote_reason ? ` — ${j.vote_reason}` : ''}`);
+            }
+        }
+
+        return interaction.editReply({ embeds: [infoEmbed(Colors.info, `🗳️ Jury Tally — ${formatCaseId(c.case_number)}`, lines)] }), true;
+    }
+
+    // ================================================================
+    // /strikeevidence
+    // ================================================================
+    if (cmd === 'strikeevidence') {
+        const caseInput = interaction.options.getString('case_id');
+        const messageId = interaction.options.getString('message_id');
+        const reason    = interaction.options.getString('reason');
+
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+        if (c.judge_id !== interaction.user.id && !isAdmin)
+            return interaction.editReply({ embeds: [errEmbed('Only the presiding judge or an admin can strike evidence.')] }), true;
+
+        const { rows: evRows } = await pool.query(
+            `SELECT * FROM evidence WHERE case_id = $1 AND message_id = $2`,
+            [c.id, messageId]
+        );
+        if (!evRows.length) return interaction.editReply({ embeds: [errEmbed('Message not found in evidence log.')] }), true;
+        if (evRows[0].struck) return interaction.editReply({ embeds: [errEmbed('This evidence has already been struck.')] }), true;
+
+        await pool.query(
+            `UPDATE evidence SET struck = TRUE, struck_by = $1, struck_reason = $2 WHERE message_id = $3 AND case_id = $4`,
+            [interaction.user.id, reason, messageId, c.id]
+        );
+        await pool.query(`UPDATE cases SET evidence_count = GREATEST(evidence_count - 1, 0) WHERE id = $1`, [c.id]);
+
+        const updated = await getCaseById(c.id);
+        await updatePinnedEmbed(updated);
+
+        if (c.case_channel_id) {
+            const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, '🚫 Evidence Struck',
+                `Message \`${messageId}\` struck from the evidence log.\n**Reason:** ${reason}\n**By:** <@${interaction.user.id}>`
+            )] });
+        }
+
+        await logAction(interaction.user.id, 'EVIDENCE_STRUCK', reason, interaction.user.id);
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Evidence Struck', `Message \`${messageId}\` removed from evidence log.`)] }), true;
+    }
+
+    // ================================================================
+    // /evidence
+    // ================================================================
+    if (cmd === 'evidence') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const { rows: evRows } = await pool.query(
+            `SELECT * FROM evidence WHERE case_id = $1 ORDER BY created_at ASC`,
+            [c.id]
+        );
+
+        if (!evRows.length)
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📁 Evidence Log', `No evidence logged for **${formatCaseId(c.case_number)}**.`)] }), true;
+
+        await paginatedReply(
+            interaction, evRows, 6,
+            STATUS_COLORS[c.status] || Colors.neutral,
+            `📁 Evidence — ${formatCaseId(c.case_number)}`,
+            (ev) => {
+                const struckLabel = ev.struck ? ' **[STRUCK]**' : '';
+                const struckLine  = ev.struck ? `\n*🚫 Struck by <@${ev.struck_by}>: ${ev.struck_reason}*` : '';
+                return (
+                    `**Msg:** \`${ev.message_id}\`${struckLabel}\n` +
+                    `**Author:** <@${ev.author_id}>\n` +
+                    `**Content:** ${ev.content?.substring(0, 150) || '*empty*'}` +
+                    `${struckLine}\n*${ts(ev.created_at)}*`
+                );
+            }
+        );
+        return true;
+    }
+
+    // ================================================================
+    // /exportcase
+    // ================================================================
+    if (cmd === 'exportcase') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const participants = await getCaseParticipants(c);
+        if (!participants.includes(interaction.user.id) && !isAdmin)
+            return interaction.editReply({ embeds: [errEmbed('You must be a participant or admin to export this case.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        const { rows: evRows } = await pool.query(
+            `SELECT * FROM evidence WHERE case_id = $1 ORDER BY created_at ASC`,
+            [c.id]
+        );
+        const { rows: lawyerReqs } = await pool.query(
+            `SELECT * FROM lawyer_requests WHERE case_id = $1 ORDER BY created_at ASC`,
+            [c.id]
+        );
+
+        const sep = '='.repeat(60);
+        const div = '-'.repeat(60);
+
+        const lines = [
+            sep,
+            'COURT BOT — CASE TRANSCRIPT',
+            `Exported: ${new Date().toUTCString()}`,
+            sep,
+            '',
+            `Case ID:              ${formatCaseId(c.case_number)}`,
+            `Status:               ${c.status}`,
+            `Filed:                ${new Date(c.filed_at).toUTCString()}`,
+            `Reason:               ${c.reason}`,
+            '',
+            `Prosecutor:           ${c.prosecutor_id}`,
+            `Prosecutor's Lawyer:  ${c.prosecutor_lawyer_id || 'None'}`,
+            `Defendant:            ${c.defendant_id}`,
+            `Defense Lawyer:       ${c.defense_lawyer_id || 'None'}`,
+            `Judge:                ${c.judge_id || 'None'}`,
+            '',
+            `Scheduled:            ${c.scheduled_at ? new Date(c.scheduled_at).toUTCString() : 'N/A'}`,
+            `Started:              ${c.started_at   ? new Date(c.started_at).toUTCString()   : 'N/A'}`,
+            `Closed:               ${c.closed_at    ? new Date(c.closed_at).toUTCString()    : 'N/A'}`,
+            '',
+            `Verdict:              ${c.verdict || 'None'}`,
+            `Verdict Reason:       ${c.verdict_reason || 'N/A'}`,
+            `Punishment Type:      ${c.punishment_type || 'None'}`,
+            `Punishment Length:    ${c.punishment_length || 'N/A'}`,
+            '',
+            div,
+            'JURY MEMBERS',
+            div,
+        ];
+
+        if (jury.length) {
+            for (const j of jury) {
+                lines.push(`User: ${j.user_id} | Vote: ${j.vote || 'Not voted'} | Reason: ${j.vote_reason || 'N/A'}`);
+            }
+        } else {
+            lines.push('No jury members.');
+        }
+
+        lines.push('', div, 'EVIDENCE LOG', div);
+
+        if (evRows.length) {
+            for (const ev of evRows) {
+                const struck = ev.struck ? '[STRUCK] ' : '';
+                lines.push(`${struck}[${new Date(ev.created_at).toUTCString()}] Author: ${ev.author_id}`);
+                lines.push(`  Msg ID:  ${ev.message_id}`);
+                lines.push(`  Content: ${ev.content || '*empty*'}`);
+                if (ev.struck) lines.push(`  Struck by: ${ev.struck_by} — ${ev.struck_reason}`);
+                lines.push('');
+            }
+        } else {
+            lines.push('No evidence logged.');
+        }
+
+        lines.push(div, 'LAWYER REQUESTS', div);
+
+        if (lawyerReqs.length) {
+            for (const lr of lawyerReqs) {
+                lines.push(
+                    `[${new Date(lr.created_at).toUTCString()}] ${lr.side.toUpperCase()} | ` +
+                    `Requester: ${lr.requester_id} → Requested: ${lr.requested_id} | Status: ${lr.status}`
+                );
+            }
+        } else {
+            lines.push('No lawyer requests.');
+        }
+
+        lines.push('', sep, 'END OF TRANSCRIPT');
+
+        const buffer = Buffer.from(lines.join('\n'), 'utf-8');
+        const fileName = `transcript-${formatCaseId(c.case_number)}.txt`;
+
+        try {
+            const user = await client.users.fetch(interaction.user.id);
+            await user.send({
+                embeds: [simpleEmbed(Colors.info, '📄 Case Transcript', `Transcript for **${formatCaseId(c.case_number)}** attached below.`)],
+                files: [{ attachment: buffer, name: fileName }],
+            });
+        } catch {
+            return interaction.editReply({ embeds: [errEmbed('Could not DM you the transcript. Please enable DMs from server members.')] }), true;
+        }
+
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Transcript Sent', `The transcript for **${formatCaseId(c.case_number)}** has been DMed to you.`)] }), true;
+    }
+
+    // ================================================================
+    // /caseinfo
+    // ================================================================
+    if (cmd === 'caseinfo') {
+        const caseInput = interaction.options.getString('case_id');
+        const c = await resolveCase(guildId, caseInput, true);
+        if (!c) return interaction.editReply({ embeds: [errEmbed('Case not found.')] }), true;
+
+        const jury = await getJuryMembers(c.id);
+        const juryList = jury.length
+            ? jury.map(j => `<@${j.user_id}>${j.vote ? ` (\`${j.vote}\`)` : ''}`).join(', ')
+            : '*No jury*';
+
+        const lines = [
+            `**Case ID:** \`${formatCaseId(c.case_number)}\``,
+            `**Status:** \`${c.status}\``,
+            `**Filed:** ${ts(c.filed_at)}`,
+            `**Reason:** ${c.reason}`,
+            '',
+            `**👨‍⚖️ Prosecutor:** <@${c.prosecutor_id}>`,
+            `**🏛️ Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None*'}`,
+            `**👤 Defendant:** <@${c.defendant_id}>`,
+            `**🛡️ Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None*'}`,
+            `**⚖️ Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*None*'}`,
+            '',
+            `**🗳️ Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
+            `**📅 Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*N/A*'}`,
+            `**📁 Evidence:** ${c.evidence_count} messages`,
+        ];
+
+        if (c.verdict) {
+            lines.push('');
+            lines.push(`**🔨 Verdict:** \`${c.verdict}\``);
+            lines.push(`**Verdict Reason:** ${c.verdict_reason}`);
+            if (c.punishment_type) lines.push(`**⚡ Punishment:** \`${c.punishment_type}\` — ${c.punishment_length || 'permanent'}`);
+        }
+        if (c.case_channel_id) lines.push(`**📢 Channel:** <#${c.case_channel_id}>`);
+        if (c.closed_at) lines.push(`**🔒 Closed:** ${ts(c.closed_at)}`);
+
+        return interaction.editReply({ embeds: [infoEmbed(STATUS_COLORS[c.status] || Colors.neutral, `📋 Case ${formatCaseId(c.case_number)}`, lines)] }), true;
+    }
+
+    // ================================================================
+    // /listcases
+    // ================================================================
+    if (cmd === 'listcases') {
+        const activeCases = await getActiveCases(guildId);
+        if (!activeCases.length)
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📋 Active Cases', 'No active cases right now.')] }), true;
+
+        await paginatedReply(
+            interaction, activeCases, 5, Colors.info,
+            '📋 Active Cases',
+            (c) => [
+                `**${formatCaseId(c.case_number)}** — \`${c.status}\``,
+                `⚖️ <@${c.prosecutor_id}> vs <@${c.defendant_id}>`,
+                `🔨 Judge: ${c.judge_id ? `<@${c.judge_id}>` : '*Unassigned*'}`,
+                `📅 Filed: ${ts(c.filed_at)}`,
+                c.case_channel_id ? `📢 <#${c.case_channel_id}>` : '',
+            ].filter(Boolean).join('\n')
+        );
+        return true;
+    }
+
+    // ================================================================
+    // /casehistory
+    // ================================================================
+    if (cmd === 'casehistory') {
+        const user = interaction.options.getUser('user');
+        const { rows } = await pool.query(
+            `SELECT * FROM cases WHERE guild_id = $1 AND (prosecutor_id = $2 OR defendant_id = $2 OR judge_id = $2 OR prosecutor_lawyer_id = $2 OR defense_lawyer_id = $2) ORDER BY filed_at DESC`,
+            [guildId, user.id]
+        );
+        const { rows: juryRows } = await pool.query(
+            `SELECT c.* FROM cases c JOIN jury_members j ON j.case_id = c.id WHERE c.guild_id = $1 AND j.user_id = $2`,
+            [guildId, user.id]
+        );
+
+        const allIds = new Set(rows.map(r => r.id));
+        const combined = [...rows];
+        for (const r of juryRows) if (!allIds.has(r.id)) combined.push(r);
+        combined.sort((a, b) => new Date(b.filed_at) - new Date(a.filed_at));
+
+        if (!combined.length)
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📋 Case History', `No cases found for <@${user.id}>.`)] }), true;
+
+        await paginatedReply(
+            interaction, combined, 5, Colors.info,
+            `📋 Case History — ${user.tag}`,
+            (c) => {
+                const roleList = [];
+                if (c.prosecutor_id === user.id) roleList.push('Prosecutor');
+                if (c.defendant_id  === user.id) roleList.push('Defendant');
+                if (c.judge_id      === user.id) roleList.push('Judge');
+                if (c.prosecutor_lawyer_id === user.id) roleList.push("Prosecution Lawyer");
+                if (c.defense_lawyer_id    === user.id) roleList.push('Defense Lawyer');
+                return (
+                    `**${formatCaseId(c.case_number)}** — \`${c.status}\`\n` +
+                    `Role: *${roleList.join(', ') || 'Jury'}*\n` +
+                    `Filed: ${ts(c.filed_at)}` +
+                    `${c.verdict ? `\nVerdict: \`${c.verdict}\`` : ''}`
+                );
+            }
+        );
+        return true;
+    }
+
+    // ================================================================
+    // /casecount
+    // ================================================================
+    if (cmd === 'casecount') {
+        const { rows: totals } = await pool.query(
+            `SELECT status, COUNT(*) as count FROM cases WHERE guild_id = $1 GROUP BY status ORDER BY status`,
+            [guildId]
+        );
+        const { rows: verdicts } = await pool.query(
+            `SELECT verdict, COUNT(*) as count FROM cases WHERE guild_id = $1 AND verdict IS NOT NULL GROUP BY verdict`,
+            [guildId]
+        );
+        const { rows: totalRow } = await pool.query(
+            `SELECT COUNT(*) as total FROM cases WHERE guild_id = $1`,
+            [guildId]
+        );
+
+        const lines = [
+            `**📊 Total Cases:** ${totalRow[0]?.total || 0}`,
+            '',
+            '**By Status:**',
+            ...totals.map(r => `— \`${r.status}\`: **${r.count}**`),
+            '',
+            '**Verdicts:**',
+            ...(verdicts.length ? verdicts.map(r => `— \`${r.verdict}\`: **${r.count}**`) : ['— No verdicts yet']),
+        ];
+
+        return interaction.editReply({ embeds: [infoEmbed(Colors.info, '📊 Server Case Statistics', lines)] }), true;
+    }
+
+    // Command not found
+    return false;
+}
 
 // ============================================================
-// --- LOGIN ---
+// LOGIN
 // ============================================================
 
 client.login(process.env.BOT_TOKEN);
