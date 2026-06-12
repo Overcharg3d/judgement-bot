@@ -78,7 +78,7 @@ function infoEmbed(color, title, lines, thumbnail) {
     return e;
 }
 
-function errEmbed(msg) { return simpleEmbed(Colors.error, '❌ Error', msg); }
+function errEmbed(msg) { return simpleEmbed(Colors.error, 'Error', msg); }
 
 function ts(date) {
     let t = date ? new Date(date).getTime() : Date.now();
@@ -146,7 +146,7 @@ async function paginatedReply(interaction, rows, itemsPerPage, color, title, lin
         const lines = rows.slice(start, start + itemsPerPage).map(lineMapper).join('\n\n');
         const e = new EmbedBuilder()
             .setColor(color)
-            .setTitle(`${title} — Page ${page + 1}/${maxPages} (${rows.length} total)`)
+            .setTitle(`${title} - Page ${page + 1}/${maxPages} (${rows.length} total)`)
             .setDescription(lines || 'Nothing here.')
             .setTimestamp();
         if (thumbnail) e.setThumbnail(thumbnail);
@@ -177,9 +177,9 @@ async function paginatedReply(interaction, rows, itemsPerPage, color, title, lin
 // ============================================================
 
 async function confirm(interaction, title, description) {
-    const embed = simpleEmbed(Colors.warn, `⚠️ ${title}`, description);
+    const embed = simpleEmbed(Colors.warn, title, description);
     const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('confirm').setLabel('✅ Confirm').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('confirm').setLabel('Confirm').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
     const msg = await interaction.editReply({ embeds: [embed], components: [row] });
@@ -436,46 +436,40 @@ async function buildCaseEmbed(c) {
     const jury = await getJuryMembers(c.id);
     const juryList = jury.length ? jury.map(j => `<@${j.user_id}>`).join(', ') : '*No jury yet*';
     const statusColor = STATUS_COLORS[c.status] || Colors.neutral;
-
-    const statusEmojis = {
-        FILED: '📋', ASSIGNED: '⚖️', WAITING_LAWYERS: '⏳', SCHEDULED: '📅',
-        IN_PROGRESS: '🔴', VERDICT: '🔨', CLOSED: '✅', CANCELLED: '❌', DISMISSED: '🚫'
-    };
-    const emoji = statusEmojis[c.status] || '📄';
-
+    
     const lines = [
         `**Case ID:** \`${formatCaseId(c.case_number)}\``,
-        `**Status:** ${emoji} \`${c.status}\``,
+        `**Status:** \`${c.status}\``,
         `**Filed:** ${ts(c.filed_at)}`,
         '',
-        `**👨‍⚖️ Prosecutor:** <@${c.prosecutor_id}>`,
-        `**🏛️ Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None assigned*'}`,
+        `**Prosecutor:** <@${c.prosecutor_id}>`,
+        `**Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None assigned*'}`,
         '',
-        `**👤 Defendant:** <@${c.defendant_id}>`,
-        `**🛡️ Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None assigned*'}`,
+        `**Defendant:** <@${c.defendant_id}>`,
+        `**Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None assigned*'}`,
         '',
-        `**⚖️ Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*Not yet assigned*'}`,
+        `**Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*Not yet assigned*'}`,
         '',
-        `**🗳️ Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
+        `**Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
         '',
-        `**📅 Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*Not scheduled*'}`,
-        `**📁 Evidence Count:** ${c.evidence_count}`,
+        `**Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*Not scheduled*'}`,
+        `**Evidence Count:** ${c.evidence_count}`,
         '',
-        `**📝 Reason:** ${c.reason}`,
+        `**Reason:** ${c.reason}`,
     ];
 
     if (c.verdict) {
         lines.push('');
-        lines.push(`**🔨 Verdict:** \`${c.verdict}\``);
+        lines.push(`**Verdict:** \`${c.verdict}\``);
         lines.push(`**Reason:** ${c.verdict_reason}`);
         if (c.punishment_type) {
-            lines.push(`**⚡ Punishment:** \`${c.punishment_type}\` — ${c.punishment_length ? msToHuman(parseDuration(c.punishment_length) ?? -1) : 'Permanent'}`);
+            lines.push(`**Punishment:** \`${c.punishment_type}\` - ${c.punishment_length ? msToHuman(parseDuration(c.punishment_length) ?? -1) : 'Permanent'}`);
         }
     }
 
     return new EmbedBuilder()
         .setColor(statusColor)
-        .setTitle(`${emoji} Case ${formatCaseId(c.case_number)} — ${c.status}`)
+        .setTitle(`${emoji} Case ${formatCaseId(c.case_number)} - ${c.status}`)
         .setDescription(lines.join('\n'))
         .setTimestamp()
         .setFooter({ text: `Court Bot • ${formatCaseId(c.case_number)}` });
@@ -547,7 +541,7 @@ async function lockChannel(channel) {
 }
 
 // ============================================================
-// ARCHIVE HELPER — also deletes jury/judge chat channels
+// ARCHIVE HELPER - also deletes jury/judge chat channels
 // ============================================================
 
 async function archiveCase(c, guild, config, summaryEmbed) {
@@ -555,11 +549,11 @@ async function archiveCase(c, guild, config, summaryEmbed) {
         // Delete jury-chat and judge-chat channels (no longer needed)
         if (c.jury_chat_channel_id) {
             const juryChannel = await guild.channels.fetch(c.jury_chat_channel_id).catch(() => null);
-            if (juryChannel) await juryChannel.delete('Case closed — jury chat removed.').catch(() => {});
+            if (juryChannel) await juryChannel.delete('Case closed - jury chat removed.').catch(() => {});
         }
         if (c.judge_chat_channel_id) {
             const judgeChannel = await guild.channels.fetch(c.judge_chat_channel_id).catch(() => null);
-            if (judgeChannel) await judgeChannel.delete('Case closed — judge chat removed.').catch(() => {});
+            if (judgeChannel) await judgeChannel.delete('Case closed - judge chat removed.').catch(() => {});
         }
 
         // Move/lock main case channel to archive
@@ -610,13 +604,13 @@ function buildSummaryEmbed(c, closedBy) {
     if (c.verdict) {
         lines.push(`**Verdict:** \`${c.verdict}\``);
         lines.push(`**Verdict Reason:** ${c.verdict_reason}`);
-        if (c.punishment_type) lines.push(`**Punishment:** \`${c.punishment_type}\` — ${c.punishment_length || 'permanent'}`);
+        if (c.punishment_type) lines.push(`**Punishment:** \`${c.punishment_type}\` - ${c.punishment_length || 'permanent'}`);
     }
     if (closedBy) lines.push(`**Closed by:** ${closedBy}`);
     const color = STATUS_COLORS[c.status] || Colors.neutral;
     return new EmbedBuilder()
         .setColor(color)
-        .setTitle(`📁 Case Closed — ${formatCaseId(c.case_number)}`)
+        .setTitle(`Case Closed - ${formatCaseId(c.case_number)}`)
         .setDescription(lines.join('\n'))
         .setTimestamp();
 }
@@ -729,7 +723,7 @@ async function applyVerdictPunishment(guild, c, config) {
 
     const punishEmbed = new EmbedBuilder()
         .setColor(Colors.error)
-        .setTitle('⚖️ Court Verdict — Punishment Applied')
+        .setTitle('Court Verdict - Punishment Applied')
         .setDescription(
             `You have been found **GUILTY** in **${guild.name}** (${formatCaseId(c.case_number)}).\n` +
             `**Punishment:** \`${c.punishment_type}\`\n` +
@@ -802,14 +796,14 @@ async function startCaseNow(caseId) {
     if (updated.case_channel_id) {
         const ch = await client.channels.fetch(updated.case_channel_id).catch(() => null);
         if (ch) {
-            await ch.send({ embeds: [simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `${formatCaseId(updated.case_number)} has officially begun. All parties, please take your positions.`)] });
+            await ch.send({ embeds: [simpleEmbed(Colors.in_progress, 'Court is Now in Session', `${formatCaseId(updated.case_number)} has officially begun. All parties, please take your positions.`)] });
         }
     }
 
     await updatePinnedEmbed(updated);
 
     const participants = await getCaseParticipants(updated);
-    await dmAll(participants, simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `**${formatCaseId(updated.case_number)}** has begun.`));
+    await dmAll(participants, simpleEmbed(Colors.in_progress, 'Court is Now in Session', `**${formatCaseId(updated.case_number)}** has begun.`));
     await logAction(updated.guild_id, 'CASE_STARTED', formatCaseId(updated.case_number), client.user.id);
 }
 
@@ -883,10 +877,10 @@ const setupSessions = new Map();
 
 function buildSetupInitEmbed(config) {
     const fields = config ? [
-        `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '❌ Not set'}`,
-        `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '❌ Not set'}`,
-        `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '❌ Not set'}`,
-        `**Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '❌ Not set'}`,
+        `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : 'Not set'}`,
+        `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : 'Not set'}`,
+        `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : 'Not set'}`,
+        `**Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : 'Not set'}`,
         `**Slowmode:** \`${config.slowmode_value || 0}s\``,
     ] : [];
 
@@ -896,11 +890,11 @@ function buildSetupInitEmbed(config) {
         'Click **▶ Start Setup** to configure the bot in 2 steps (2 modals).',
         'Your answers are pre-filled with your current config if one exists.',
         '',
-        config ? `**Current config:**\n${fields.join('\n')}` : '⚠️ No configuration found yet.',
+        config ? `**Current config:**\n${fields.join('\n')}` : 'No configuration found yet.',
     ];
     return new EmbedBuilder()
         .setColor(Colors.info)
-        .setTitle('⚙️ Court Bot Setup')
+        .setTitle('Court Bot Setup')
         .setDescription(lines.join('\n'))
         .setTimestamp();
 }
@@ -909,7 +903,7 @@ function buildSetupModal(modalNum, values) {
     const steps = modalNum === 1 ? SETUP_STEPS_1 : SETUP_STEPS_2;
     const modal = new ModalBuilder()
         .setCustomId(`setup_modal_${modalNum}`)
-        .setTitle(`⚙️ Setup — Part ${modalNum} of 2`);
+        .setTitle(`Setup - Part ${modalNum} of 2`);
 
     for (const step of steps) {
         modal.addComponents(
@@ -1116,7 +1110,7 @@ client.on('interactionCreate', async interaction => {
         const cmd = interaction.commandName;
         const guildId = interaction.guildId;
 
-        // /setup must NOT be deferred — it needs to show a modal via button click
+        // /setup must NOT be deferred - it needs to show a modal via button click
         // Handle it separately before deferring everything else
         if (cmd === 'setup') {
             if (!isAdmin) return interaction.reply({ embeds: [errEmbed('Administrator permission required.')], ephemeral: true });
@@ -1161,16 +1155,16 @@ client.on('interactionCreate', async interaction => {
                 const config = await getConfig(guildId);
                 if (!config) return interaction.editReply({ embeds: [errEmbed('No configuration found. Run /setup first.')] });
                 const lines = [
-                    `**🏛️ Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '❌ *Not set*'}`,
-                    `**📁 Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '❌ *Not set*'}`,
-                    `**🔨 Judge Chat Prefix:** \`${config.judge_chat_name || 'Not set'}\``,
-                    `**📋 Court Records Channel:** \`${config.court_records_name || 'Not set'}\``,
-                    `**🗳️ Jury Chat Prefix:** \`${config.jury_chat_name || 'Not set'}\``,
-                    `**📝 Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
-                    `**📁 Archive Format:** \`${config.archive_channel_format || 'Not set'}\``,
-                    `**⚖️ Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '❌ *Not set*'}`,
-                    `**🔒 Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '❌ *Not set*'}`,
-                    `**⏱️ Slowmode:** \`${config.slowmode_value || 0}s\``,
+                    `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '*Not set*'}`,
+                    `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '*Not set*'}`,
+                    `**Judge Chat Prefix:** \`${config.judge_chat_name || 'Not set'}\``,
+                    `**Court Records Channel:** \`${config.court_records_name || 'Not set'}\``,
+                    `**Jury Chat Prefix:** \`${config.jury_chat_name || 'Not set'}\``,
+                    `**Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
+                    `**Archive Format:** \`${config.archive_channel_format || 'Not set'}\``,
+                    `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '*Not set*'}`,
+                    `**Jail Role:** ${config.jail_role_id ? `<@&${config.jail_role_id}>` : '*Not set*'}`,
+                    `**Slowmode:** \`${config.slowmode_value || 0}s\``,
                 ];
                 return interaction.editReply({ embeds: [infoEmbed(Colors.info, '⚙️ Court Configuration', lines)] });
             }
@@ -1265,17 +1259,17 @@ client.on('interactionCreate', async interaction => {
                 const recordsChannel = guild.channels.cache.find(ch => ch.name === config.court_records_name && ch.type === ChannelType.GuildText);
                 if (recordsChannel) {
                     await recordsChannel.send({ embeds: [simpleEmbed(Colors.filed,
-                        `📋 New Case Filed — ${formatCaseId(caseNumber)}`,
+                        `New Case Filed - ${formatCaseId(caseNumber)}`,
                         `**Prosecutor:** <@${interaction.user.id}>\n**Defendant:** <@${defendant.id}>\n**Reason:** ${reason}\n\n**Case Channel:** ${caseChannel}`
                     )] });
                 }
 
-                await dmUser(defendant.id, simpleEmbed(Colors.warn, '⚠️ You Have Been Sued',
+                await dmUser(defendant.id, simpleEmbed(Colors.warn, 'You Have Been Sued',
                     `<@${interaction.user.id}> has filed a case against you in **${guild.name}**.\n\n**Reason:** ${reason}\n**Case:** ${formatCaseId(caseNumber)}\n\n**Case Channel:** ${caseChannel}`
                 ));
 
                 await logAction(defendant.id, 'CASE_FILED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Filed', `**${formatCaseId(caseNumber)}** has been filed.\n**Case Channel:** ${caseChannel}`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Filed', `**${formatCaseId(caseNumber)}** has been filed.\n**Case Channel:** ${caseChannel}`)] });
             }
 
             // ================================================================
@@ -1304,10 +1298,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.warn, '❌ Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.warn, 'Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_CANCELLED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Cancelled', `**${formatCaseId(c.case_number)}** has been cancelled.`)] });
             }
 
             // ================================================================
@@ -1350,10 +1344,10 @@ client.on('interactionCreate', async interaction => {
                 await updatePinnedEmbed(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.assigned, '⚖️ Judge Assigned', `<@${interaction.user.id}> has claimed **${formatCaseId(c.case_number)}** as the presiding judge.`));
+                await dmAll(participants, simpleEmbed(Colors.assigned, 'Judge Assigned', `<@${interaction.user.id}> has claimed **${formatCaseId(c.case_number)}** as the presiding judge.`));
 
                 await logAction(interaction.user.id, 'JUDGE_CLAIMED', formatCaseId(c.case_number), interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Claimed', `You are now the judge for **${formatCaseId(c.case_number)}**.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Claimed', `You are now the judge for **${formatCaseId(c.case_number)}**.`)] });
             }
 
             // ================================================================
@@ -1378,10 +1372,10 @@ client.on('interactionCreate', async interaction => {
                 await scheduleCase(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.scheduled, '📅 Case Scheduled', `**${formatCaseId(c.case_number)}** is scheduled to begin ${ts(scheduledAt)}.`));
+                await dmAll(participants, simpleEmbed(Colors.scheduled, 'Case Scheduled', `**${formatCaseId(c.case_number)}** is scheduled to begin ${ts(scheduledAt)}.`));
 
                 await logAction(interaction.user.id, 'CASE_SCHEDULED', `${formatCaseId(c.case_number)} at ${scheduledAt.toISOString()}`, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Scheduled', `**${formatCaseId(c.case_number)}** will go live ${ts(scheduledAt)}.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Scheduled', `**${formatCaseId(c.case_number)}** will go live ${ts(scheduledAt)}.`)] });
             }
 
             // ================================================================
@@ -1405,10 +1399,10 @@ client.on('interactionCreate', async interaction => {
                 await scheduleCase(updated);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.warn, '⏰ Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`));
+                await dmAll(participants, simpleEmbed(Colors.warn, 'Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`));
 
                 await logAction(interaction.user.id, 'CASE_POSTPONED', `${formatCaseId(c.case_number)} to ${newTime.toISOString()}`, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Postponed', `**${formatCaseId(c.case_number)}** rescheduled to ${ts(newTime)}.`)] });
             }
 
             // ================================================================
@@ -1436,10 +1430,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.neutral, '🔒 Case Ended', `**${formatCaseId(c.case_number)}** closed by <@${interaction.user.id}>.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.neutral, 'Case Ended', `**${formatCaseId(c.case_number)}** closed by <@${interaction.user.id}>.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_ENDED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Ended', `**${formatCaseId(c.case_number)}** has been closed.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Ended', `**${formatCaseId(c.case_number)}** has been closed.`)] });
             }
 
             // ================================================================
@@ -1466,10 +1460,10 @@ client.on('interactionCreate', async interaction => {
                 await archiveCase(updated, guild, config, summary);
 
                 const participants = await getCaseParticipants(updated);
-                await dmAll(participants, simpleEmbed(Colors.neutral, '🚫 Case Dismissed', `**${formatCaseId(c.case_number)}** dismissed.\n**Reason:** ${reason}`));
+                await dmAll(participants, simpleEmbed(Colors.neutral, 'Case Dismissed', `**${formatCaseId(c.case_number)}** dismissed.\n**Reason:** ${reason}`));
 
                 await logAction(interaction.user.id, 'CASE_DISMISSED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Dismissed', `**${formatCaseId(c.case_number)}** has been dismissed.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Dismissed', `**${formatCaseId(c.case_number)}** has been dismissed.`)] });
             }
 
             // ================================================================
@@ -1504,10 +1498,10 @@ client.on('interactionCreate', async interaction => {
                 if (updated.case_channel_id) {
                     const ch = await guild.channels.fetch(updated.case_channel_id).catch(() => null);
                     if (ch) {
-                        const pLine = punishmentType ? `\n**⚡ Punishment:** \`${punishmentType}\` — ${punishmentLength || 'permanent'}` : '';
+                        const pLine = punishmentType ? `\n**Punishment:** \`${punishmentType}\` - ${punishmentLength || 'permanent'}` : '';
                         await ch.send({ embeds: [new EmbedBuilder()
                             .setColor(verdictValue === 'GUILTY' ? Colors.error : Colors.success)
-                            .setTitle(`🔨 Verdict — ${formatCaseId(c.case_number)}`)
+                            .setTitle(`Verdict - ${formatCaseId(c.case_number)}`)
                             .setDescription(`**Verdict:** \`${verdictValue}\`\n**Reason:** ${reason}${pLine}\n**Judge:** <@${interaction.user.id}>`)
                             .setTimestamp()
                         ] });
@@ -1526,16 +1520,16 @@ client.on('interactionCreate', async interaction => {
                 await updatePinnedEmbed(closed);
 
                 const participants = await getCaseParticipants(updated);
-                const pLine = punishmentType ? `\n**⚡ Punishment:** \`${punishmentType}\` — ${punishmentLength || 'permanent'}` : '';
+                const pLine = punishmentType ? `\n**Punishment:** \`${punishmentType}\` - ${punishmentLength || 'permanent'}` : '';
                 await dmAll(participants, new EmbedBuilder()
                     .setColor(verdictValue === 'GUILTY' ? Colors.error : Colors.success)
-                    .setTitle(`🔨 Verdict Set — ${formatCaseId(c.case_number)}`)
+                    .setTitle(`Verdict Set - ${formatCaseId(c.case_number)}`)
                     .setDescription(`**Verdict:** \`${verdictValue}\`\n**Reason:** ${reason}${pLine}`)
                     .setTimestamp()
                 );
 
                 await logAction(c.defendant_id, `VERDICT_${verdictValue}`, reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Verdict Set', `**${formatCaseId(c.case_number)}** — \`${verdictValue}\`. Case archived.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Verdict Set', `**${formatCaseId(c.case_number)}** - \`${verdictValue}\`. Case archived.`)] });
             }
 
             // ================================================================
@@ -1550,7 +1544,7 @@ client.on('interactionCreate', async interaction => {
                 if (!member) return interaction.editReply({ embeds: [errEmbed('Member not found.')] });
                 await member.roles.add(config.judge_role_id);
                 await logAction(user.id, 'JUDGE_ASSIGNED', null, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Judge Role Assigned', `<@${user.id}> is now a judge.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Judge Role Assigned', `<@${user.id}> is now a judge.`)] });
             }
 
             // ================================================================
@@ -1565,7 +1559,7 @@ client.on('interactionCreate', async interaction => {
                 if (!member) return interaction.editReply({ embeds: [errEmbed('Member not found.')] });
                 await member.roles.remove(config.judge_role_id);
                 await logAction(user.id, 'JUDGE_REVOKED', null, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Judge Role Revoked', `<@${user.id}> is no longer a judge.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Judge Role Revoked', `<@${user.id}> is no longer a judge.`)] });
             }
 
             // ================================================================
@@ -1595,12 +1589,12 @@ client.on('interactionCreate', async interaction => {
                 await jailUser(interaction.guild, member, interaction.user.id, reason, durationMs, config);
 
                 const durationStr = durationMs === -1 ? 'Permanent' : msToHuman(durationMs);
-                await dmUser(targetUser.id, simpleEmbed(Colors.error, '🔒 You Have Been Jailed',
+                await dmUser(targetUser.id, simpleEmbed(Colors.error, 'You Have Been Jailed',
                     `You were jailed in **${interaction.guild.name}**.\n**Reason:** ${reason}\n**Duration:** ${durationStr}`
                 ));
 
                 await logAction(targetUser.id, 'JAILED', reason, interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ User Jailed', `<@${targetUser.id}> jailed.\n**Duration:** ${durationStr}\n**Reason:** ${reason}`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'User Jailed', `<@${targetUser.id}> jailed.\n**Duration:** ${durationStr}\n**Reason:** ${reason}`)] });
             }
 
             // ================================================================
@@ -1613,9 +1607,9 @@ client.on('interactionCreate', async interaction => {
 
                 await unjailUser(interaction.guild, targetUser.id, config);
 
-                await dmUser(targetUser.id, simpleEmbed(Colors.success, '🔓 Released from Jail', `You have been released in **${interaction.guild.name}**.`));
+                await dmUser(targetUser.id, simpleEmbed(Colors.success, 'Released from Jail', `You have been released in **${interaction.guild.name}**.`));
                 await logAction(targetUser.id, 'UNJAILED', 'Manual release by admin.', interaction.user.id);
-                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ User Released', `<@${targetUser.id}> has been released from jail.`)] });
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'User Released', `<@${targetUser.id}> has been released from jail.`)] });
             }
 
             // Route remaining commands to Part 2 handler
@@ -1646,7 +1640,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             if (id === 'setup_start') {
-                // Show modal directly from the button interaction — this is correct
+                // Show modal directly from the button interaction - this is correct
                 const modal = buildSetupModal(1, session.values);
                 await interaction.showModal(modal);
                 return;
@@ -1686,7 +1680,7 @@ client.on('interactionCreate', async interaction => {
                     if (!guild) return interaction.update({ content: 'Could not find the server.', components: [], embeds: [] });
                     await _assignLawyer(c, req, interaction.user.id, guild);
                     await pool.query(`UPDATE lawyer_requests SET status = 'ACCEPTED' WHERE id = $1`, [req.id]);
-                    await interaction.update({ embeds: [simpleEmbed(Colors.success, '✅ Accepted', `You are now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)], components: [] });
+                    await interaction.update({ embeds: [simpleEmbed(Colors.success, 'Accepted', `You are now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)], components: [] });
                 } else {
                     await pool.query(`UPDATE lawyer_requests SET status = 'DECLINED' WHERE id = $1`, [req.id]);
                     await dmUser(req.requester_id, simpleEmbed(Colors.warn, 'Lawyer Request Declined', `<@${interaction.user.id}> declined your lawyer request for **${formatCaseId(c.case_number)}** (${side}).`));
@@ -1720,7 +1714,7 @@ client.on('interactionCreate', async interaction => {
                 }
                 setupSessions.set(interaction.user.id, session);
         
-                // Can't show modal from modal submit — send a button instead
+                // Can't show modal from modal submit - send a button instead
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
                         .setCustomId('setup_part2')
@@ -1728,7 +1722,7 @@ client.on('interactionCreate', async interaction => {
                         .setStyle(ButtonStyle.Primary)
                 );
                 await interaction.reply({
-                    embeds: [simpleEmbed(Colors.info, '⚙️ Setup — Part 1 Saved', 'Click below to continue to Part 2 of 2.')],
+                    embeds: [simpleEmbed(Colors.info, 'Setup - Part 1 Saved', 'Click below to continue to Part 2 of 2.')],
                     components: [row],
                     ephemeral: true
                 });
@@ -1776,18 +1770,18 @@ client.on('interactionCreate', async interaction => {
 
                 const savedConfig = await getConfig(session.guildId);
                 const lines = [
-                    '✅ Court Bot is fully configured and ready!',
+                    'Court Bot is fully configured and ready!',
                     '',
-                    `**🏛️ Court Category:** ${savedConfig.court_category_id ? `<#${savedConfig.court_category_id}>` : '❌ Not set'}`,
-                    `**📁 Archive Category:** ${savedConfig.archive_category_id ? `<#${savedConfig.archive_category_id}>` : '❌ Not set'}`,
-                    `**⚖️ Judge Role:** ${savedConfig.judge_role_id ? `<@&${savedConfig.judge_role_id}>` : '❌ Not set'}`,
-                    `**🔒 Jail Role:** ${savedConfig.jail_role_id ? `<@&${savedConfig.jail_role_id}>` : '❌ Not set'}`,
-                    `**📝 Case Channel Format:** \`${savedConfig.case_channel_format}\``,
-                    `**⏱️ Slowmode:** \`${savedConfig.slowmode_value || 0}s\``,
+                    `**Court Category:** ${savedConfig.court_category_id ? `<#${savedConfig.court_category_id}>` : 'Not set'}`,
+                    `**Archive Category:** ${savedConfig.archive_category_id ? `<#${savedConfig.archive_category_id}>` : 'Not set'}`,
+                    `**Judge Role:** ${savedConfig.judge_role_id ? `<@&${savedConfig.judge_role_id}>` : 'Not set'}`,
+                    `**Jail Role:** ${savedConfig.jail_role_id ? `<@&${savedConfig.jail_role_id}>` : 'Not set'}`,
+                    `**Case Channel Format:** \`${savedConfig.case_channel_format}\``,
+                    `**Slowmode:** \`${savedConfig.slowmode_value || 0}s\``,
                 ];
 
                 await interaction.reply({
-                    embeds: [infoEmbed(Colors.success, '⚙️ Setup Complete', lines)],
+                    embeds: [infoEmbed(Colors.success, 'Setup Complete', lines)],
                     ephemeral: true
                 });
             } catch (e) {
@@ -1919,12 +1913,12 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         await updatePinnedEmbed(updated);
 
         const participants = await getCaseParticipants(updated);
-        await dmAll(participants, simpleEmbed(Colors.info, '⚖️ Judge Transferred',
+        await dmAll(participants, simpleEmbed(Colors.info, 'Judge Transferred',
             `**${formatCaseId(c.case_number)}** transferred from ${oldJudgeId ? `<@${oldJudgeId}>` : '*none*'} to <@${newJudgeUser.id}>.`
         ));
 
         await logAction(newJudgeUser.id, 'JUDGE_TRANSFERRED', formatCaseId(c.case_number), interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Transferred', `**${formatCaseId(c.case_number)}** is now under judge <@${newJudgeUser.id}>.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Transferred', `**${formatCaseId(c.case_number)}** is now under judge <@${newJudgeUser.id}>.`)] }), true;
     }
 
     // ================================================================
@@ -1950,7 +1944,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         if (updated.case_channel_id) {
             const ch = await client.channels.fetch(updated.case_channel_id).catch(() => null);
             if (ch) {
-                await ch.send({ embeds: [simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session (Force Started)',
+                await ch.send({ embeds: [simpleEmbed(Colors.in_progress, 'Court is Now in Session (Force Started)',
                     `${formatCaseId(updated.case_number)} has been force-started by an admin. All parties, please take your positions.`
                 )] });
             }
@@ -1959,10 +1953,10 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         await updatePinnedEmbed(updated);
 
         const participants = await getCaseParticipants(updated);
-        await dmAll(participants, simpleEmbed(Colors.in_progress, '🔴 Court is Now in Session', `**${formatCaseId(updated.case_number)}** has been force-started.`));
+        await dmAll(participants, simpleEmbed(Colors.in_progress, 'Court is Now in Session', `**${formatCaseId(updated.case_number)}** has been force-started.`));
 
         await logAction(guildId, 'CASE_FORCE_STARTED', formatCaseId(updated.case_number), interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Force Started', `**${formatCaseId(c.case_number)}** is now IN_PROGRESS.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Force Started', `**${formatCaseId(c.case_number)}** is now IN_PROGRESS.`)] }), true;
     }
 
     // ================================================================
@@ -1981,7 +1975,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         const updated = await getCaseById(c.id);
         await updatePinnedEmbed(updated);
         await logAction(interaction.user.id, 'STATUS_OVERRIDE', `${formatCaseId(c.case_number)} -> ${newStatus}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Status Updated', `**${formatCaseId(c.case_number)}** status set to \`${newStatus}\`.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Status Updated', `**${formatCaseId(c.case_number)}** status set to \`${newStatus}\`.`)] }), true;
     }
 
     // ================================================================
@@ -2016,7 +2010,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         await updatePinnedEmbed(updated);
 
         await logAction(interaction.user.id, 'CASE_EDITED', `${formatCaseId(c.case_number)}.${field} = ${value}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Case Edited', `**${formatCaseId(c.case_number)}** field \`${field}\` → \`${value}\``)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Case Edited', `**${formatCaseId(c.case_number)}** field \`${field}\` → \`${value}\``)] }), true;
     }
 
     // ================================================================
@@ -2063,7 +2057,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         if (c.case_channel_id) {
             const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
             if (ch) {
-                await ch.send({ embeds: [simpleEmbed(Colors.info, '⚖️ Lawyer Requested',
+                await ch.send({ embeds: [simpleEmbed(Colors.info, 'Lawyer Requested',
                     `<@${interaction.user.id}> has requested <@${targetUser.id}> as their **${side}** lawyer.\nAwaiting response.`
                 )] });
             }
@@ -2081,8 +2075,8 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
             .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`accept_lawyer_${c.id}_${side}`).setLabel('✅ Accept').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`decline_lawyer_${c.id}_${side}`).setLabel('❌ Decline').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`accept_lawyer_${c.id}_${side}`).setLabel('Accept').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`decline_lawyer_${c.id}_${side}`).setLabel('Decline').setStyle(ButtonStyle.Danger),
         );
 
         try {
@@ -2091,7 +2085,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         } catch { /* DMs closed */ }
 
         await logAction(targetUser.id, 'LAWYER_REQUESTED', `${side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Requested', `Request sent to <@${targetUser.id}>.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Lawyer Requested', `Request sent to <@${targetUser.id}>.`)] }), true;
     }
 
     // ================================================================
@@ -2152,17 +2146,17 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
             if (ch) await removeParticipantFromChannel(ch, lawyerId);
         }
 
-        await dmUser(lawyerId, simpleEmbed(Colors.warn, '⚠️ Lawyer Revoked',
+        await dmUser(lawyerId, simpleEmbed(Colors.warn, 'Lawyer Revoked',
             `You have been removed as a lawyer from **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
         ));
 
         const participants = await getCaseParticipants(final);
-        await dmAll(participants.filter(id => id !== lawyerId), simpleEmbed(Colors.warn, '⚠️ Lawyer Revoked',
+        await dmAll(participants.filter(id => id !== lawyerId), simpleEmbed(Colors.warn, 'Lawyer Revoked',
             `<@${lawyerId}> has been removed as the **${field === 'prosecutor_lawyer_id' ? 'prosecution' : 'defense'}** lawyer from **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
         ));
 
         await logAction(lawyerId, 'LAWYER_REVOKED', reason, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Revoked', `<@${lawyerId}> has been removed.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Lawyer Revoked', `<@${lawyerId}> has been removed.`)] }), true;
     }
 
     // ================================================================
@@ -2187,7 +2181,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         await pool.query(`UPDATE lawyer_requests SET status = 'ACCEPTED' WHERE id = $1`, [req.id]);
 
         await logAction(interaction.user.id, 'LAWYER_ACCEPTED', `${req.side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Accepted', `You are now the **${req.side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Lawyer Accepted', `You are now the **${req.side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
     }
 
     // ================================================================
@@ -2219,7 +2213,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         }
 
         await logAction(interaction.user.id, 'LAWYER_DECLINED', `${req.side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Request Declined', `You declined the lawyer request for **${formatCaseId(c.case_number)}**.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Request Declined', `You declined the lawyer request for **${formatCaseId(c.case_number)}**.`)] }), true;
     }
 
     // ================================================================
@@ -2269,21 +2263,21 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         await updatePinnedEmbed(final);
 
         if (oldLawyerId) {
-            await dmUser(oldLawyerId, simpleEmbed(Colors.warn, '⚠️ Lawyer Replaced',
+            await dmUser(oldLawyerId, simpleEmbed(Colors.warn, 'Lawyer Replaced',
                 `You have been replaced as the **${side}** lawyer in **${formatCaseId(c.case_number)}**.`
             ));
         }
-        await dmUser(newLawyerUser.id, simpleEmbed(Colors.info, '⚖️ Lawyer Assigned',
+        await dmUser(newLawyerUser.id, simpleEmbed(Colors.info, 'Lawyer Assigned',
             `You have been assigned as the **${side}** lawyer in **${formatCaseId(c.case_number)}** by an admin.`
         ));
 
         const participants = await getCaseParticipants(final);
-        await dmAll(participants, simpleEmbed(Colors.info, '⚖️ Lawyer Replaced',
+        await dmAll(participants, simpleEmbed(Colors.info, 'Lawyer Replaced',
             `The **${side}** lawyer for **${formatCaseId(c.case_number)}** is now <@${newLawyerUser.id}>.`
         ));
 
         await logAction(newLawyerUser.id, 'LAWYER_REPLACED', `${side} for ${formatCaseId(c.case_number)}`, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Lawyer Replaced', `<@${newLawyerUser.id}> is now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Lawyer Replaced', `<@${newLawyerUser.id}> is now the **${side}** lawyer for **${formatCaseId(c.case_number)}**.`)] }), true;
     }
 
     // ================================================================
@@ -2321,13 +2315,13 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
 
         if (c.case_channel_id) {
             const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
-            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.success, '🗳️ Juror Joined',
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.success, 'Juror Joined',
                 `<@${userId}> has joined the jury for **${formatCaseId(c.case_number)}**. (${jury.length + 1}/${MAX_JURY})`
             )] });
         }
 
         await logAction(userId, 'JURY_JOINED', formatCaseId(c.case_number), userId);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Joined Jury', `You are now on the jury for **${formatCaseId(c.case_number)}**.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Joined Jury', `You are now on the jury for **${formatCaseId(c.case_number)}**.`)] }), true;
     }
 
     // ================================================================
@@ -2357,7 +2351,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         const updated = await getCaseById(c.id);
         await updatePinnedEmbed(updated);
 
-        await dmUser(targetUser.id, simpleEmbed(Colors.warn, '⚠️ Removed from Jury',
+        await dmUser(targetUser.id, simpleEmbed(Colors.warn, 'Removed from Jury',
             `You have been removed from the jury for **${formatCaseId(c.case_number)}**.\n**Reason:** ${reason}`
         ));
 
@@ -2369,7 +2363,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         }
 
         await logAction(targetUser.id, 'JUROR_KICKED', reason, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Juror Removed', `<@${targetUser.id}> has been removed from the jury.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Juror Removed', `<@${targetUser.id}> has been removed from the jury.`)] }), true;
     }
 
     // ================================================================
@@ -2408,7 +2402,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         }
 
         await logAction(interaction.user.id, `JURY_VOTE_${voteValue}`, formatCaseId(c.case_number), interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Vote Cast', 'Your vote has been recorded privately.')] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Vote Cast', 'Your vote has been recorded privately.')] }), true;
     }
 
     // ================================================================
@@ -2431,9 +2425,9 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
             `**Case:** \`${formatCaseId(c.case_number)}\``,
             `**Total Jurors:** ${jury.length}`,
             '',
-            `✅ **Guilty:** ${guilty}`,
-            `❌ **Not Guilty:** ${notGuilty}`,
-            `⏳ **Pending:** ${pending}`,
+            `**Guilty:** ${guilty}`,
+            `**Not Guilty:** ${notGuilty}`,
+            `**Pending:** ${pending}`,
         ];
 
         if (jury.length) {
@@ -2441,13 +2435,13 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
             lines.push('**Individual Votes:**');
             for (const j of jury) {
                 const voteDisplay = j.vote
-                    ? (j.vote === 'GUILTY' ? '✅ `GUILTY`' : '❌ `NOT GUILTY`')
-                    : '⏳ *Not yet voted*';
-                lines.push(`<@${j.user_id}>: ${voteDisplay}${j.vote_reason ? ` — ${j.vote_reason}` : ''}`);
+                    ? (j.vote === 'GUILTY' ? '`GUILTY`' : '`NOT GUILTY`')
+                    : '*Not yet voted*';
+                lines.push(`<@${j.user_id}>: ${voteDisplay}${j.vote_reason ? ` - ${j.vote_reason}` : ''}`);
             }
         }
 
-        return interaction.editReply({ embeds: [infoEmbed(Colors.info, `🗳️ Jury Tally — ${formatCaseId(c.case_number)}`, lines)] }), true;
+        return interaction.editReply({ embeds: [infoEmbed(Colors.info, `Jury Tally - ${formatCaseId(c.case_number)}`, lines)] }), true;
     }
 
     // ================================================================
@@ -2481,13 +2475,13 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
 
         if (c.case_channel_id) {
             const ch = await client.channels.fetch(c.case_channel_id).catch(() => null);
-            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, '🚫 Evidence Struck',
+            if (ch) await ch.send({ embeds: [simpleEmbed(Colors.warn, 'Evidence Struck',
                 `Message \`${messageId}\` struck from the evidence log.\n**Reason:** ${reason}\n**By:** <@${interaction.user.id}>`
             )] });
         }
 
         await logAction(interaction.user.id, 'EVIDENCE_STRUCK', reason, interaction.user.id);
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Evidence Struck', `Message \`${messageId}\` removed from evidence log.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Evidence Struck', `Message \`${messageId}\` removed from evidence log.`)] }), true;
     }
 
     // ================================================================
@@ -2504,15 +2498,15 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         );
 
         if (!evRows.length)
-            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📁 Evidence Log', `No evidence logged for **${formatCaseId(c.case_number)}**.`)] }), true;
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Evidence Log', `No evidence logged for **${formatCaseId(c.case_number)}**.`)] }), true;
 
         await paginatedReply(
             interaction, evRows, 6,
             STATUS_COLORS[c.status] || Colors.neutral,
-            `📁 Evidence — ${formatCaseId(c.case_number)}`,
+            `Evidence - ${formatCaseId(c.case_number)}`,
             (ev) => {
                 const struckLabel = ev.struck ? ' **[STRUCK]**' : '';
-                const struckLine  = ev.struck ? `\n*🚫 Struck by <@${ev.struck_by}>: ${ev.struck_reason}*` : '';
+                const struckLine  = ev.struck ? `\n*Struck by <@${ev.struck_by}>: ${ev.struck_reason}*` : '';
                 return (
                     `**Msg:** \`${ev.message_id}\`${struckLabel}\n` +
                     `**Author:** <@${ev.author_id}>\n` +
@@ -2551,7 +2545,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
 
         const lines = [
             sep,
-            'COURT BOT — CASE TRANSCRIPT',
+            'COURT BOT - CASE TRANSCRIPT',
             `Exported: ${new Date().toUTCString()}`,
             sep,
             '',
@@ -2596,7 +2590,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
                 lines.push(`${struck}[${new Date(ev.created_at).toUTCString()}] Author: ${ev.author_id}`);
                 lines.push(`  Msg ID:  ${ev.message_id}`);
                 lines.push(`  Content: ${ev.content || '*empty*'}`);
-                if (ev.struck) lines.push(`  Struck by: ${ev.struck_by} — ${ev.struck_reason}`);
+                if (ev.struck) lines.push(`  Struck by: ${ev.struck_by} - ${ev.struck_reason}`);
                 lines.push('');
             }
         } else {
@@ -2624,14 +2618,14 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         try {
             const user = await client.users.fetch(interaction.user.id);
             await user.send({
-                embeds: [simpleEmbed(Colors.info, '📄 Case Transcript', `Transcript for **${formatCaseId(c.case_number)}** attached below.`)],
+                embeds: [simpleEmbed(Colors.info, 'Case Transcript', `Transcript for **${formatCaseId(c.case_number)}** attached below.`)],
                 files: [{ attachment: buffer, name: fileName }],
             });
         } catch {
             return interaction.editReply({ embeds: [errEmbed('Could not DM you the transcript. Please enable DMs from server members.')] }), true;
         }
 
-        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, '✅ Transcript Sent', `The transcript for **${formatCaseId(c.case_number)}** has been DMed to you.`)] }), true;
+        return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Transcript Sent', `The transcript for **${formatCaseId(c.case_number)}** has been DMed to you.`)] }), true;
     }
 
     // ================================================================
@@ -2653,27 +2647,27 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
             `**Filed:** ${ts(c.filed_at)}`,
             `**Reason:** ${c.reason}`,
             '',
-            `**👨‍⚖️ Prosecutor:** <@${c.prosecutor_id}>`,
-            `**🏛️ Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None*'}`,
-            `**👤 Defendant:** <@${c.defendant_id}>`,
-            `**🛡️ Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None*'}`,
-            `**⚖️ Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*None*'}`,
+            `**Prosecutor:** <@${c.prosecutor_id}>`,
+            `**Prosecutor's Lawyer:** ${c.prosecutor_lawyer_id ? `<@${c.prosecutor_lawyer_id}>` : '*None*'}`,
+            `**Defendant:** <@${c.defendant_id}>`,
+            `**Defense Lawyer:** ${c.defense_lawyer_id ? `<@${c.defense_lawyer_id}>` : '*None*'}`,
+            `**Judge:** ${c.judge_id ? `<@${c.judge_id}>` : '*None*'}`,
             '',
-            `**🗳️ Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
-            `**📅 Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*N/A*'}`,
-            `**📁 Evidence:** ${c.evidence_count} messages`,
+            `**Jury (${jury.length}/${MAX_JURY}):** ${juryList}`,
+            `**Scheduled:** ${c.scheduled_at ? ts(c.scheduled_at) : '*N/A*'}`,
+            `**Evidence:** ${c.evidence_count} messages`,
         ];
 
         if (c.verdict) {
             lines.push('');
-            lines.push(`**🔨 Verdict:** \`${c.verdict}\``);
+            lines.push(`**Verdict:** \`${c.verdict}\``);
             lines.push(`**Verdict Reason:** ${c.verdict_reason}`);
-            if (c.punishment_type) lines.push(`**⚡ Punishment:** \`${c.punishment_type}\` — ${c.punishment_length || 'permanent'}`);
+            if (c.punishment_type) lines.push(`**Punishment:** \`${c.punishment_type}\` - ${c.punishment_length || 'permanent'}`);
         }
-        if (c.case_channel_id) lines.push(`**📢 Channel:** <#${c.case_channel_id}>`);
-        if (c.closed_at) lines.push(`**🔒 Closed:** ${ts(c.closed_at)}`);
+        if (c.case_channel_id) lines.push(`**Channel:** <#${c.case_channel_id}>`);
+        if (c.closed_at) lines.push(`**Closed:** ${ts(c.closed_at)}`);
 
-        return interaction.editReply({ embeds: [infoEmbed(STATUS_COLORS[c.status] || Colors.neutral, `📋 Case ${formatCaseId(c.case_number)}`, lines)] }), true;
+        return interaction.editReply({ embeds: [infoEmbed(STATUS_COLORS[c.status] || Colors.neutral, `Case ${formatCaseId(c.case_number)}`, lines)] }), true;
     }
 
     // ================================================================
@@ -2682,17 +2676,17 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
     if (cmd === 'listcases') {
         const activeCases = await getActiveCases(guildId);
         if (!activeCases.length)
-            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📋 Active Cases', 'No active cases right now.')] }), true;
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Active Cases', 'No active cases right now.')] }), true;
 
         await paginatedReply(
             interaction, activeCases, 5, Colors.info,
-            '📋 Active Cases',
+            'Active Cases',
             (c) => [
-                `**${formatCaseId(c.case_number)}** — \`${c.status}\``,
-                `⚖️ <@${c.prosecutor_id}> vs <@${c.defendant_id}>`,
-                `🔨 Judge: ${c.judge_id ? `<@${c.judge_id}>` : '*Unassigned*'}`,
-                `📅 Filed: ${ts(c.filed_at)}`,
-                c.case_channel_id ? `📢 <#${c.case_channel_id}>` : '',
+                `**${formatCaseId(c.case_number)}** - \`${c.status}\``,
+                `<@${c.prosecutor_id}> vs <@${c.defendant_id}>`,
+                `Judge: ${c.judge_id ? `<@${c.judge_id}>` : '*Unassigned*'}`,
+                `Filed: ${ts(c.filed_at)}`,
+                c.case_channel_id ? `<#${c.case_channel_id}>` : '',
             ].filter(Boolean).join('\n')
         );
         return true;
@@ -2718,11 +2712,11 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         combined.sort((a, b) => new Date(b.filed_at) - new Date(a.filed_at));
 
         if (!combined.length)
-            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, '📋 Case History', `No cases found for <@${user.id}>.`)] }), true;
+            return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Case History', `No cases found for <@${user.id}>.`)] }), true;
 
         await paginatedReply(
             interaction, combined, 5, Colors.info,
-            `📋 Case History — ${user.tag}`,
+            `Case History - ${user.tag}`,
             (c) => {
                 const roleList = [];
                 if (c.prosecutor_id === user.id) roleList.push('Prosecutor');
@@ -2731,7 +2725,7 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
                 if (c.prosecutor_lawyer_id === user.id) roleList.push("Prosecution Lawyer");
                 if (c.defense_lawyer_id    === user.id) roleList.push('Defense Lawyer');
                 return (
-                    `**${formatCaseId(c.case_number)}** — \`${c.status}\`\n` +
+                    `**${formatCaseId(c.case_number)}** - \`${c.status}\`\n` +
                     `Role: *${roleList.join(', ') || 'Jury'}*\n` +
                     `Filed: ${ts(c.filed_at)}` +
                     `${c.verdict ? `\nVerdict: \`${c.verdict}\`` : ''}`
@@ -2759,16 +2753,16 @@ async function handleCommands2(interaction, cmd, guildId, isAdmin) {
         );
 
         const lines = [
-            `**📊 Total Cases:** ${totalRow[0]?.total || 0}`,
+            `**Total Cases:** ${totalRow[0]?.total || 0}`,
             '',
             '**By Status:**',
-            ...totals.map(r => `— \`${r.status}\`: **${r.count}**`),
+            ...totals.map(r => `- \`${r.status}\`: **${r.count}**`),
             '',
             '**Verdicts:**',
-            ...(verdicts.length ? verdicts.map(r => `— \`${r.verdict}\`: **${r.count}**`) : ['— No verdicts yet']),
+            ...(verdicts.length ? verdicts.map(r => `- \`${r.verdict}\`: **${r.count}**`) : ['- No verdicts yet']),
         ];
 
-        return interaction.editReply({ embeds: [infoEmbed(Colors.info, '📊 Server Case Statistics', lines)] }), true;
+        return interaction.editReply({ embeds: [infoEmbed(Colors.info, 'Server Case Statistics', lines)] }), true;
     }
 
     // Command not found
