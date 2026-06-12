@@ -312,6 +312,26 @@ async function initDB() {
             created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+    // Migrations for columns added after initial table creation
+    const columnsToAdd = [
+        ['punishment_type', 'TEXT'],
+        ['punishment_length', 'TEXT'],
+        ['verdict', 'TEXT'],
+        ['verdict_reason', 'TEXT'],
+        ['pinned_message_id', 'TEXT'],
+        ['evidence_count', 'INT DEFAULT 0'],
+        ['jury_chat_channel_id', 'TEXT'],
+        ['judge_chat_channel_id', 'TEXT'],
+        ['scheduled_at', 'TIMESTAMPTZ'],
+        ['started_at', 'TIMESTAMPTZ'],
+        ['closed_at', 'TIMESTAMPTZ'],
+    ];
+    for (const [col, type] of columnsToAdd) {
+        await pool.query(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS ${col} ${type}`)
+            .catch(e => console.error(`Migration error (${col}):`, e.message));
+    }
+
     console.log('Database initialized.');
 }
 
