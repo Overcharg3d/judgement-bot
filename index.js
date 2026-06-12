@@ -469,7 +469,7 @@ async function buildCaseEmbed(c) {
 
     return new EmbedBuilder()
         .setColor(statusColor)
-        .setTitle(`${emoji} Case ${formatCaseId(c.case_number)} - ${c.status}`)
+        .setTitle(`Case ${formatCaseId(c.case_number)} - ${c.status}`)
         .setDescription(lines.join('\n'))
         .setTimestamp()
         .setFooter({ text: `Court Bot • ${formatCaseId(c.case_number)}` });
