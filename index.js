@@ -4,7 +4,7 @@ const {
     Client, GatewayIntentBits, ApplicationCommandOptionType,
     EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder,
     ComponentType, ChannelType, PermissionFlagsBits, ModalBuilder,
-    TextInputBuilder, TextInputStyle
+    TextInputBuilder, TextInputStyle, OverwriteType
 } = require('discord.js');
 const { Pool } = require('pg');
 const express = require('express');
@@ -561,6 +561,36 @@ async function lockChannel(channel) {
 }
 
 // ============================================================
+// ARCHIVE LOCK - visible only to Judge role + admins
+// ============================================================
+
+async function lockArchiveChannel(channel, config) {
+    const everyoneId = channel.guild.roles.everyone.id;
+
+    // Hide from everyone by default
+    await channel.permissionOverwrites.edit(everyoneId, {
+        ViewChannel: false,
+        SendMessages: false,
+    }).catch(() => {});
+
+    // Let the Judge role view (read-only) - admins bypass overwrites entirely
+    if (config?.judge_role_id) {
+        await channel.permissionOverwrites.edit(config.judge_role_id, {
+            ViewChannel: true,
+            SendMessages: false,
+        }).catch(() => {});
+    }
+
+    // Strip all individual member overwrites (former case participants),
+    // but keep the bot's own overwrite so it can still manage the channel.
+    for (const [id, overwrite] of channel.permissionOverwrites.cache) {
+        if (overwrite.type === OverwriteType.Member && id !== client.user.id) {
+            await channel.permissionOverwrites.delete(id).catch(() => {});
+        }
+    }
+}
+
+// ============================================================
 // ARCHIVE HELPER - also deletes jury/judge chat channels
 // ============================================================
 
@@ -589,7 +619,7 @@ async function archiveCase(c, guild, config, summaryEmbed) {
                 if (config.archive_category_id) {
                     await ch.setParent(config.archive_category_id, { lockPermissions: false }).catch(() => {});
                 }
-                await lockChannel(ch);
+                await lockArchiveChannel(ch, config);
             }
         }
 
