@@ -1653,6 +1653,14 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
+        if (id === 'setup_part2') {
+            const session = setupSessions.get(interaction.user.id);
+            if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
+            const modal2 = buildSetupModal(2, session.values);
+            await interaction.showModal(modal2);
+            return;
+        }
+
         // Lawyer accept/decline buttons (sent via DM)
         if (id.startsWith('accept_lawyer_') || id.startsWith('decline_lawyer_')) {
             try {
@@ -1700,21 +1708,30 @@ client.on('interactionCreate', async interaction => {
     // ---- MODAL SUBMISSIONS ----
     if (interaction.isModalSubmit()) {
         const id = interaction.customId;
-
+        
         if (id === 'setup_modal_1') {
             try {
                 const session = setupSessions.get(interaction.user.id);
                 if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
-
+        
                 for (const step of SETUP_STEPS_1) {
                     const val = interaction.fields.getTextInputValue(step.key).trim();
                     if (val) session.values[step.key] = val;
                 }
                 setupSessions.set(interaction.user.id, session);
-
-                // Show modal 2 from the modal-1 submit interaction
-                const modal2 = buildSetupModal(2, session.values);
-                await interaction.showModal(modal2);
+        
+                // Can't show modal from modal submit — send a button instead
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('setup_part2')
+                        .setLabel('▶ Continue to Part 2')
+                        .setStyle(ButtonStyle.Primary)
+                );
+                await interaction.reply({
+                    embeds: [simpleEmbed(Colors.info, '⚙️ Setup — Part 1 Saved', 'Click below to continue to Part 2 of 2.')],
+                    components: [row],
+                    ephemeral: true
+                });
             } catch (e) {
                 console.error('Setup modal 1 error:', e);
                 await interaction.reply({ content: `Setup error: ${e.message}`, ephemeral: true }).catch(() => {});
