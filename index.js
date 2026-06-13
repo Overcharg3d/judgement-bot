@@ -311,6 +311,21 @@ async function initDB() {
             case_id     INT,
             created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS blacklisted_users (
+            user_id     TEXT PRIMARY KEY,
+            blacklisted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS filing_bans (
+            id          SERIAL PRIMARY KEY,
+            guild_id    TEXT NOT NULL,
+            user_id     TEXT NOT NULL,
+            reason      TEXT,
+            banned_by   TEXT,
+            banned_at   TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(guild_id, user_id)
+        );
     `);
 
     // Migrations for columns added after initial table creation
@@ -326,6 +341,9 @@ async function initDB() {
         ['scheduled_at', 'TIMESTAMPTZ'],
         ['started_at', 'TIMESTAMPTZ'],
         ['closed_at', 'TIMESTAMPTZ'],
+        ['filing_cooldown_hours', 'INT DEFAULT 0'],
+        ['jury_chat_format', "TEXT DEFAULT 'jury-{case_id}'"],
+        ['judge_chat_format', "TEXT DEFAULT 'judge-{case_id}'"],
     ];
     for (const [col, type] of columnsToAdd) {
         await pool.query(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS ${col} ${type}`)
@@ -908,19 +926,23 @@ async function _assignLawyer(c, req, userId, guild) {
 // ============================================================
 
 const SETUP_STEPS_1 = [
-    { key: 'court_category_id',   label: 'Court Category ID',          hint: 'ID of the category for active case channels.' },
-    { key: 'archive_category_id', label: 'Archive Category ID',        hint: 'ID of the category for closed/archived cases.' },
-    { key: 'judge_chat_name',     label: 'Judge Chat Name Prefix',      hint: 'Prefix for judge channel (e.g. judge-chat → judge-chat-001).' },
-    { key: 'court_records_name',  label: 'Court Records Channel Name',  hint: 'Name of the public records channel (e.g. court-records).' },
-    { key: 'jury_chat_name',      label: 'Jury Chat Name Prefix',       hint: 'Prefix for jury channel (e.g. jury-chat → jury-chat-001).' },
+    { key: 'court_category_id',      label: 'Court Category ID',           hint: 'ID of the category for active case channels.' },
+    { key: 'archive_category_id',    label: 'Archive Category ID',         hint: 'ID of the category for closed/archived cases.' },
+    { key: 'court_records_name',     label: 'Court Records Channel Name',  hint: 'Name of existing channel for records (e.g. court-records).' },
+    { key: 'case_channel_format',    label: 'Case Channel Format',         hint: 'Use {case_id}. Example: courtcase-{case_id}' },
+    { key: 'archive_channel_format', label: 'Archive Channel Format',      hint: 'Use {case_id}. Example: case-{case_id}-archive' },
 ];
 
 const SETUP_STEPS_2 = [
-    { key: 'case_channel_format',    label: 'Case Channel Name Format',    hint: 'Use {case_id}. Example: courtcase-{case_id}' },
-    { key: 'archive_channel_format', label: 'Archive Channel Name Format', hint: 'Use {case_id}. Example: case-{case_id}-archive' },
-    { key: 'judge_role_id',          label: 'Judge Role ID',               hint: 'Discord role ID for judges.' },
-    { key: 'jail_role_id',           label: 'Jail Role ID',                hint: 'Discord role ID for jailed users.' },
-    { key: 'slowmode_value',         label: 'Slowmode (seconds, 0 = off)', hint: 'Slowmode applied to case channels.' },
+    { key: 'jury_chat_format',  label: 'Jury Chat Format',            hint: 'Use {case_id}. Example: jury-{case_id}' },
+    { key: 'judge_chat_format', label: 'Judge Chat Format',           hint: 'Use {case_id}. Example: judge-{case_id}' },
+    { key: 'judge_role_id',     label: 'Judge Role ID',               hint: 'Discord role ID for judges.' },
+    { key: 'jail_role_id',      label: 'Jail Role ID',                hint: 'Discord role ID for jailed users.' },
+    { key: 'slowmode_value',    label: 'Slowmode (seconds, 0 = off)', hint: 'Slowmode applied to case channels.' },
+];
+
+const SETUP_STEPS_3 = [
+    { key: 'filing_cooldown_hours', label: 'Case Filing Cooldown (hours, 0 = off)', hint: 'How long a user must wait between filing cases.' },
 ];
 
 const setupSessions = new Map();
@@ -950,10 +972,10 @@ function buildSetupInitEmbed(config) {
 }
 
 function buildSetupModal(modalNum, values) {
-    const steps = modalNum === 1 ? SETUP_STEPS_1 : SETUP_STEPS_2;
+    const steps = modalNum === 1 ? SETUP_STEPS_1 : modalNum === 2 ? SETUP_STEPS_2 : SETUP_STEPS_3;
     const modal = new ModalBuilder()
         .setCustomId(`setup_modal_${modalNum}`)
-        .setTitle(`Setup - Part ${modalNum} of 2`);
+        .setTitle(`Setup - Part ${modalNum} of 3`);
 
     for (const step of steps) {
         modal.addComponents(
@@ -1143,6 +1165,21 @@ client.once('ready', async () => {
         { name: 'unjail', description: 'Release a jailed user (admin only)', ...CMD_GUILD, options: [
             { name: 'user', description: 'User to release', type: ApplicationCommandOptionType.User, required: true },
         ]},
+        { name: 'blacklist',    description: 'Globally blacklist a user from the bot (owner only)', ...CMD_GUILD, options: [
+            { name: 'user', description: 'User to blacklist', type: ApplicationCommandOptionType.User, required: true },
+        ]},
+        { name: 'unblacklist', description: 'Remove a user from the global blacklist (owner only)', ...CMD_GUILD, options: [
+            { name: 'user', description: 'User to unblacklist', type: ApplicationCommandOptionType.User, required: true },
+        ]},
+        { name: 'blacklistlist', description: 'View all globally blacklisted users (owner only)', ...CMD_GUILD },
+        { name: 'bancasefiling', description: 'Ban a user from filing cases in this server (admin only)', ...CMD_GUILD, options: [
+            { name: 'user',   description: 'User to ban',  type: ApplicationCommandOptionType.User,   required: true },
+            { name: 'reason', description: 'Reason',       type: ApplicationCommandOptionType.String, required: true },
+        ]},
+        { name: 'unbancasefiling', description: 'Unban a user from filing cases (admin only)', ...CMD_GUILD, options: [
+            { name: 'user', description: 'User to unban', type: ApplicationCommandOptionType.User, required: true },
+        ]},
+        { name: 'casefilingbannedlist', description: 'List users banned from filing cases in this server', ...CMD_GUILD },
     ]);
 
     console.log('Commands registered.');
@@ -1154,6 +1191,15 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) || interaction.user.id === OWNER_ID;
+    
+    // Global blacklist guard
+    if (interaction.user.id !== OWNER_ID) {
+        const { rows: bl } = await pool.query('SELECT 1 FROM blacklisted_users WHERE user_id = $1', [interaction.user.id]).catch(() => ({ rows: [] }));
+        if (bl.length) {
+            if (interaction.isChatInputCommand()) return interaction.reply({ embeds: [errEmbed('You are blacklisted from using this bot.')], ephemeral: true });
+            return;
+        }
+    }
 
     // ---- SLASH COMMANDS ----
     if (interaction.isChatInputCommand()) {
@@ -1169,14 +1215,15 @@ client.on('interactionCreate', async interaction => {
                 const values = {
                     court_category_id:      config.court_category_id      || '',
                     archive_category_id:    config.archive_category_id    || '',
-                    judge_chat_name:        config.judge_chat_name         || 'judge-chat',
                     court_records_name:     config.court_records_name      || 'court-records',
-                    jury_chat_name:         config.jury_chat_name          || 'jury-chat',
                     case_channel_format:    config.case_channel_format     || 'courtcase-{case_id}',
                     archive_channel_format: config.archive_channel_format  || 'case-{case_id}-archive',
+                    jury_chat_format:       config.jury_chat_format        || 'jury-{case_id}',
+                    judge_chat_format:      config.judge_chat_format       || 'judge-{case_id}',
                     judge_role_id:          config.judge_role_id           || '',
                     jail_role_id:           config.jail_role_id            || '',
                     slowmode_value:         String(config.slowmode_value   || '0'),
+                    filing_cooldown_hours:  String(config.filing_cooldown_hours || '0'),
                 };
                 setupSessions.set(interaction.user.id, { values, guildId });
 
@@ -1255,8 +1302,35 @@ client.on('interactionCreate', async interaction => {
                 const channelName = resolveChannelName(config.case_channel_format, caseNumber, defendant.id);
 
                 // Jury and judge chat names include case ID to avoid conflicts
-                const juryChatName = `${config.jury_chat_name || 'jury-chat'}-${paddedId}`;
-                const judgeChatName = `${config.judge_chat_name || 'judge-chat'}-${paddedId}`;
+                const juryChatName  = resolveChannelName(config.jury_chat_format  || 'jury-{case_id}',  caseNumber, defendant.id);
+                const judgeChatName = resolveChannelName(config.judge_chat_format || 'judge-{case_id}', caseNumber, defendant.id);
+
+                // Global blacklist check
+                const { rows: blacklistCheck } = await pool.query(
+                    'SELECT 1 FROM blacklisted_users WHERE user_id = $1', [interaction.user.id]
+                );
+                if (blacklistCheck.length) return interaction.editReply({ embeds: [errEmbed('You are blacklisted from using this bot.')] });
+
+                // Server filing ban check
+                const { rows: filingBanCheck } = await pool.query(
+                    'SELECT * FROM filing_bans WHERE guild_id = $1 AND user_id = $2', [guildId, interaction.user.id]
+                );
+                if (filingBanCheck.length) return interaction.editReply({ embeds: [errEmbed(`You are banned from filing cases in this server.\n**Reason:** ${filingBanCheck[0].reason}`)] });
+
+                // Filing cooldown check
+                if (config.filing_cooldown_hours > 0) {
+                    const { rows: cooldownCheck } = await pool.query(
+                        `SELECT filed_at FROM cases WHERE guild_id = $1 AND prosecutor_id = $2 ORDER BY filed_at DESC LIMIT 1`,
+                        [guildId, interaction.user.id]
+                    );
+                    if (cooldownCheck.length) {
+                        const remaining = (config.filing_cooldown_hours * 3600000) - (Date.now() - new Date(cooldownCheck[0].filed_at).getTime());
+                        if (remaining > 0) {
+                            const hours = Math.ceil(remaining / 3600000);
+                            return interaction.editReply({ embeds: [errEmbed(`You must wait **${hours}h** before filing another case.`)] });
+                        }
+                    }
+                }
 
                 const perms = [
                     { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
@@ -1662,6 +1736,55 @@ client.on('interactionCreate', async interaction => {
                 return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'User Released', `<@${targetUser.id}> has been released from jail.`)] });
             }
 
+            if (cmd === 'blacklist') {
+                if (interaction.user.id !== OWNER_ID) return interaction.editReply({ embeds: [errEmbed('Owner only.')] }), true;
+                const user = interaction.options.getUser('user');
+                await pool.query('INSERT INTO blacklisted_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [user.id]);
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Blacklisted', `<@${user.id}> has been globally blacklisted.`)] }), true;
+            }
+
+            if (cmd === 'unblacklist') {
+                if (interaction.user.id !== OWNER_ID) return interaction.editReply({ embeds: [errEmbed('Owner only.')] }), true;
+                const user = interaction.options.getUser('user');
+                await pool.query('DELETE FROM blacklisted_users WHERE user_id = $1', [user.id]);
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Unblacklisted', `<@${user.id}> has been removed from the blacklist.`)] }), true;
+            }
+
+            if (cmd === 'blacklistlist') {
+                if (interaction.user.id !== OWNER_ID) return interaction.editReply({ embeds: [errEmbed('Owner only.')] }), true;
+                const { rows } = await pool.query('SELECT * FROM blacklisted_users ORDER BY blacklisted_at DESC');
+                if (!rows.length) return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Blacklist', 'No blacklisted users.')] }), true;
+                const lines = rows.map(r => `<@${r.user_id}> — ${ts(r.blacklisted_at)}`);
+                return interaction.editReply({ embeds: [infoEmbed(Colors.error, 'Global Blacklist', lines)] }), true;
+            }
+
+            if (cmd === 'bancasefiling') {
+                if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+                const user = interaction.options.getUser('user');
+                const reason = interaction.options.getString('reason');
+                await pool.query(
+                    'INSERT INTO filing_bans (guild_id, user_id, reason, banned_by) VALUES ($1, $2, $3, $4) ON CONFLICT (guild_id, user_id) DO UPDATE SET reason = $3, banned_by = $4, banned_at = NOW()',
+                    [guildId, user.id, reason, interaction.user.id]
+                );
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Filing Ban Applied', `<@${user.id}> is banned from filing cases.\n**Reason:** ${reason}`)] }), true;
+            }
+
+            if (cmd === 'unbancasefiling') {
+                if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+                const user = interaction.options.getUser('user');
+                const { rowCount } = await pool.query('DELETE FROM filing_bans WHERE guild_id = $1 AND user_id = $2', [guildId, user.id]);
+                if (!rowCount) return interaction.editReply({ embeds: [errEmbed(`<@${user.id}> is not filing-banned in this server.`)] }), true;
+                return interaction.editReply({ embeds: [simpleEmbed(Colors.success, 'Filing Ban Removed', `<@${user.id}> can now file cases again.`)] }), true;
+            }
+
+            if (cmd === 'casefilingbannedlist') {
+                if (!isAdmin) return interaction.editReply({ embeds: [errEmbed('Administrator permission required.')] }), true;
+                const { rows } = await pool.query('SELECT * FROM filing_bans WHERE guild_id = $1 ORDER BY banned_at DESC', [guildId]);
+                if (!rows.length) return interaction.editReply({ embeds: [simpleEmbed(Colors.neutral, 'Filing Bans', 'No users are banned from filing cases.')] }), true;
+                const lines = rows.map(r => `<@${r.user_id}> — ${r.reason}\n*Banned by <@${r.banned_by}> • ${ts(r.banned_at)}*`);
+                return interaction.editReply({ embeds: [infoEmbed(Colors.warn, 'Case Filing Bans', lines)] }), true;
+            }
+            
             // Route remaining commands to Part 2 handler
             const handled = await handleCommands2(interaction, cmd, guildId, isAdmin);
             if (!handled) return interaction.editReply({ embeds: [errEmbed('Unknown command.')] });
@@ -1702,6 +1825,14 @@ client.on('interactionCreate', async interaction => {
             if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
             const modal2 = buildSetupModal(2, session.values);
             await interaction.showModal(modal2);
+            return;
+        }
+
+        if (id === 'setup_part3') {
+            const session = setupSessions.get(interaction.user.id);
+            if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
+            const modal3 = buildSetupModal(3, session.values);
+            await interaction.showModal(modal3);
             return;
         }
 
@@ -1757,27 +1888,16 @@ client.on('interactionCreate', async interaction => {
             try {
                 const session = setupSessions.get(interaction.user.id);
                 if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
-        
                 for (const step of SETUP_STEPS_1) {
                     const val = interaction.fields.getTextInputValue(step.key).trim();
                     if (val) session.values[step.key] = val;
                 }
                 setupSessions.set(interaction.user.id, session);
-        
-                // Can't show modal from modal submit - send a button instead
                 const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('setup_part2')
-                        .setLabel('▶ Continue to Part 2')
-                        .setStyle(ButtonStyle.Primary)
+                    new ButtonBuilder().setCustomId('setup_part2').setLabel('▶ Continue to Part 2').setStyle(ButtonStyle.Primary)
                 );
-                await interaction.reply({
-                    embeds: [simpleEmbed(Colors.info, 'Setup - Part 1 Saved', 'Click below to continue to Part 2 of 2.')],
-                    components: [row],
-                    ephemeral: true
-                });
+                await interaction.reply({ embeds: [simpleEmbed(Colors.info, 'Setup - Part 1 Saved', 'Click below to continue to Part 2 of 3.')], components: [row], ephemeral: true });
             } catch (e) {
-                console.error('Setup modal 1 error:', e);
                 await interaction.reply({ content: `Setup error: ${e.message}`, ephemeral: true }).catch(() => {});
             }
             return;
@@ -1787,55 +1907,71 @@ client.on('interactionCreate', async interaction => {
             try {
                 const session = setupSessions.get(interaction.user.id);
                 if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
-
                 for (const step of SETUP_STEPS_2) {
                     const val = interaction.fields.getTextInputValue(step.key).trim();
                     if (val) session.values[step.key] = val;
                 }
+                setupSessions.set(interaction.user.id, session);
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('setup_part3').setLabel('▶ Continue to Part 3').setStyle(ButtonStyle.Primary)
+                );
+                await interaction.reply({ embeds: [simpleEmbed(Colors.info, 'Setup - Part 2 Saved', 'Click below to continue to Part 3 of 3.')], components: [row], ephemeral: true });
+            } catch (e) {
+                await interaction.reply({ content: `Setup error: ${e.message}`, ephemeral: true }).catch(() => {});
+            }
+            return;
+        }
 
+        if (id === 'setup_modal_3') {
+            try {
+                const session = setupSessions.get(interaction.user.id);
+                if (!session) return interaction.reply({ content: 'Session expired. Run /setup again.', ephemeral: true });
+                for (const step of SETUP_STEPS_3) {
+                    const val = interaction.fields.getTextInputValue(step.key).trim();
+                    if (val) session.values[step.key] = val;
+                }
                 const v = session.values;
-
                 await pool.query(`
-                    INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, judge_chat_name, court_records_name, jury_chat_name, case_channel_format, archive_channel_format, judge_role_id, jail_role_id, slowmode_value)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                    INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, court_records_name, case_channel_format, archive_channel_format, jury_chat_format, judge_chat_format, judge_role_id, jail_role_id, slowmode_value, filing_cooldown_hours)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                     ON CONFLICT (guild_id) DO UPDATE SET
-                        court_category_id = $2, archive_category_id = $3, judge_chat_name = $4,
-                        court_records_name = $5, jury_chat_name = $6, case_channel_format = $7,
-                        archive_channel_format = $8, judge_role_id = $9, jail_role_id = $10, slowmode_value = $11
+                        court_category_id = $2, archive_category_id = $3, court_records_name = $4,
+                        case_channel_format = $5, archive_channel_format = $6, jury_chat_format = $7,
+                        judge_chat_format = $8, judge_role_id = $9, jail_role_id = $10,
+                        slowmode_value = $11, filing_cooldown_hours = $12
                 `, [
                     session.guildId,
                     v.court_category_id      || null,
                     v.archive_category_id    || null,
-                    v.judge_chat_name        || 'judge-chat',
                     v.court_records_name     || 'court-records',
-                    v.jury_chat_name         || 'jury-chat',
                     v.case_channel_format    || 'courtcase-{case_id}',
                     v.archive_channel_format || 'case-{case_id}-archive',
+                    v.jury_chat_format       || 'jury-{case_id}',
+                    v.judge_chat_format      || 'judge-{case_id}',
                     v.judge_role_id          || null,
                     v.jail_role_id           || null,
                     parseInt(v.slowmode_value) || 0,
+                    parseInt(v.filing_cooldown_hours) || 0,
                 ]);
-
                 setupSessions.delete(interaction.user.id);
-
                 const savedConfig = await getConfig(session.guildId);
                 const lines = [
                     'Court Bot is fully configured and ready!',
                     '',
                     `**Court Category:** ${savedConfig.court_category_id ? `<#${savedConfig.court_category_id}>` : 'Not set'}`,
                     `**Archive Category:** ${savedConfig.archive_category_id ? `<#${savedConfig.archive_category_id}>` : 'Not set'}`,
+                    `**Court Records Channel:** \`${savedConfig.court_records_name}\``,
+                    `**Case Channel Format:** \`${savedConfig.case_channel_format}\``,
+                    `**Archive Format:** \`${savedConfig.archive_channel_format}\``,
+                    `**Jury Chat Format:** \`${savedConfig.jury_chat_format}\``,
+                    `**Judge Chat Format:** \`${savedConfig.judge_chat_format}\``,
                     `**Judge Role:** ${savedConfig.judge_role_id ? `<@&${savedConfig.judge_role_id}>` : 'Not set'}`,
                     `**Jail Role:** ${savedConfig.jail_role_id ? `<@&${savedConfig.jail_role_id}>` : 'Not set'}`,
-                    `**Case Channel Format:** \`${savedConfig.case_channel_format}\``,
                     `**Slowmode:** \`${savedConfig.slowmode_value || 0}s\``,
+                    `**Filing Cooldown:** \`${savedConfig.filing_cooldown_hours || 0}h\``,
                 ];
-
-                await interaction.reply({
-                    embeds: [infoEmbed(Colors.success, 'Setup Complete', lines)],
-                    ephemeral: true
-                });
+                await interaction.reply({ embeds: [infoEmbed(Colors.success, 'Setup Complete', lines)], ephemeral: true });
             } catch (e) {
-                console.error('Setup modal 2 error:', e);
                 await interaction.reply({ content: `Setup save error: ${e.message}`, ephemeral: true }).catch(() => {});
             }
             return;
