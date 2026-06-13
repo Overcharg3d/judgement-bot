@@ -387,7 +387,6 @@ function resolveChannelName(format, caseNum, defendantId) {
         .replace('{case_id}', String(caseNum).padStart(3, '0'))
         .replace('{defendant}', defendantId)
         .toLowerCase()
-        .replace(/[^a-z0-9-]/g, '-')
         .substring(0, 100);
 }
 
