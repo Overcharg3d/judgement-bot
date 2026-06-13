@@ -221,8 +221,8 @@ async function initDB() {
             guild_id                TEXT PRIMARY KEY,
             court_category_id       TEXT,
             archive_category_id     TEXT,
+            court_records_id        TEXT,
             judge_chat_name         TEXT DEFAULT 'judge-chat',
-            court_records_name      TEXT DEFAULT 'court-records',
             jury_chat_name          TEXT DEFAULT 'jury-chat',
             case_channel_format     TEXT DEFAULT 'courtcase-{case_id}',
             archive_channel_format  TEXT DEFAULT 'case-{case_id}-archive',
@@ -336,6 +336,7 @@ async function initDB() {
         ['verdict_reason', 'TEXT'],
         ['pinned_message_id', 'TEXT'],
         ['evidence_count', 'INT DEFAULT 0'],
+        ['court_records_id', 'TEXT'],
         ['jury_chat_channel_id', 'TEXT'],
         ['judge_chat_channel_id', 'TEXT'],
         ['scheduled_at', 'TIMESTAMPTZ'],
@@ -928,7 +929,7 @@ async function _assignLawyer(c, req, userId, guild) {
 const SETUP_STEPS_1 = [
     { key: 'court_category_id',      label: 'Court Category ID',           hint: 'ID of the category for active case channels.' },
     { key: 'archive_category_id',    label: 'Archive Category ID',         hint: 'ID of the category for closed/archived cases.' },
-    { key: 'court_records_name',     label: 'Court Records Channel Name',  hint: 'Name of existing channel for records (e.g. court-records).' },
+    { key: 'court_records_id',       label: 'Court Records Channel ID',    hint: 'ID of the court records channel.' },
     { key: 'case_channel_format',    label: 'Case Channel Format',         hint: 'Use {case_id}. Example: courtcase-{case_id}' },
     { key: 'archive_channel_format', label: 'Archive Channel Format',      hint: 'Use {case_id}. Example: case-{case_id}-archive' },
 ];
@@ -1380,7 +1381,9 @@ client.on('interactionCreate', async interaction => {
                 await pinnedMsg.pin();
                 await pool.query('UPDATE cases SET pinned_message_id = $1 WHERE id = $2', [pinnedMsg.id, c.id]);
 
-                const recordsChannel = guild.channels.cache.find(ch => ch.name === config.court_records_name && ch.type === ChannelType.GuildText);
+                const recordsChannel = config.court_records_id
+                    ? await guild.channels.fetch(config.court_records_id).catch(() => null)
+                    : null;
                 if (recordsChannel) {
                     await recordsChannel.send({ embeds: [simpleEmbed(Colors.filed,
                         `New Case Filed - ${formatCaseId(caseNumber)}`,
