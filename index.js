@@ -643,10 +643,8 @@ async function archiveCase(c, guild, config, summaryEmbed) {
         }
 
         // Post to court-records
-        if (config.court_records_name) {
-            const recordsChannel = guild.channels.cache.find(
-                ch => ch.name === config.court_records_name && ch.type === ChannelType.GuildText
-            );
+        if (config.court_records_id) {
+            const recordsChannel = await guild.channels.fetch(config.court_records_id).catch(() => null);
             if (recordsChannel && summaryEmbed) {
                 await recordsChannel.send({ embeds: [summaryEmbed] }).catch(() => {});
             }
@@ -1257,7 +1255,7 @@ client.on('interactionCreate', async interaction => {
                     `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '*Not set*'}`,
                     `**Judge Chat Format:** \`${config.judge_chat_format || 'Not set'}\``,
                     `**Jury Chat Format:** \`${config.jury_chat_format || 'Not set'}\``,
-                    `**Court Records Channel:** \`${config.court_records_name || 'Not set'}\``,
+                    `**Court Records Channel:** ${config.court_records_id ? `<#${config.court_records_id}>` : '*Not set*'}`,
                     `**Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
                     `**Archive Format:** \`${config.archive_channel_format || 'Not set'}\``,
                     `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '*Not set*'}`,
