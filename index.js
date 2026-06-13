@@ -1213,7 +1213,7 @@ client.on('interactionCreate', async interaction => {
                 const values = {
                     court_category_id:      config.court_category_id      || '',
                     archive_category_id:    config.archive_category_id    || '',
-                    court_records_name:     config.court_records_name      || 'court-records',
+                    court_records_id:       config.court_records_id        || '',
                     case_channel_format:    config.case_channel_format     || 'courtcase-{case_id}',
                     archive_channel_format: config.archive_channel_format  || 'case-{case_id}-archive',
                     jury_chat_format:       config.jury_chat_format        || 'jury-{case_id}',
