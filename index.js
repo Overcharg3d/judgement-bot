@@ -1933,10 +1933,10 @@ client.on('interactionCreate', async interaction => {
                 }
                 const v = session.values;
                 await pool.query(`
-                    INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, court_records_name, case_channel_format, archive_channel_format, jury_chat_format, judge_chat_format, judge_role_id, jail_role_id, slowmode_value, filing_cooldown_hours)
+                    INSERT INTO guild_config (guild_id, court_category_id, archive_category_id, court_records_id, case_channel_format, archive_channel_format, jury_chat_format, judge_chat_format, judge_role_id, jail_role_id, slowmode_value, filing_cooldown_hours)
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                     ON CONFLICT (guild_id) DO UPDATE SET
-                        court_category_id = $2, archive_category_id = $3, court_records_name = $4,
+                        court_category_id = $2, archive_category_id = $3, court_records_id = $4,
                         case_channel_format = $5, archive_channel_format = $6, jury_chat_format = $7,
                         judge_chat_format = $8, judge_role_id = $9, jail_role_id = $10,
                         slowmode_value = $11, filing_cooldown_hours = $12
@@ -1944,7 +1944,7 @@ client.on('interactionCreate', async interaction => {
                     session.guildId,
                     v.court_category_id      || null,
                     v.archive_category_id    || null,
-                    v.court_records_name     || 'court-records',
+                    v.court_records_id       || null,
                     v.case_channel_format    || 'courtcase-{case_id}',
                     v.archive_channel_format || 'case-{case_id}-archive',
                     v.jury_chat_format       || 'jury-{case_id}',
@@ -1961,7 +1961,7 @@ client.on('interactionCreate', async interaction => {
                     '',
                     `**Court Category:** ${savedConfig.court_category_id ? `<#${savedConfig.court_category_id}>` : 'Not set'}`,
                     `**Archive Category:** ${savedConfig.archive_category_id ? `<#${savedConfig.archive_category_id}>` : 'Not set'}`,
-                    `**Court Records Channel:** \`${savedConfig.court_records_name}\``,
+                    `**Court Records Channel:** ${savedConfig.court_records_id ? `<#${savedConfig.court_records_id}>` : 'Not set'}`,
                     `**Case Channel Format:** \`${savedConfig.case_channel_format}\``,
                     `**Archive Format:** \`${savedConfig.archive_channel_format}\``,
                     `**Jury Chat Format:** \`${savedConfig.jury_chat_format}\``,
