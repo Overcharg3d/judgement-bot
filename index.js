@@ -1254,9 +1254,9 @@ client.on('interactionCreate', async interaction => {
                 const lines = [
                     `**Court Category:** ${config.court_category_id ? `<#${config.court_category_id}>` : '*Not set*'}`,
                     `**Archive Category:** ${config.archive_category_id ? `<#${config.archive_category_id}>` : '*Not set*'}`,
-                    `**Judge Chat Prefix:** \`${config.judge_chat_name || 'Not set'}\``,
+                    `**Judge Chat Format:** \`${config.judge_chat_format || 'Not set'}\``,
+                    `**Jury Chat Format:** \`${config.jury_chat_format || 'Not set'}\``,
                     `**Court Records Channel:** \`${config.court_records_name || 'Not set'}\``,
-                    `**Jury Chat Prefix:** \`${config.jury_chat_name || 'Not set'}\``,
                     `**Case Channel Format:** \`${config.case_channel_format || 'Not set'}\``,
                     `**Archive Format:** \`${config.archive_channel_format || 'Not set'}\``,
                     `**Judge Role:** ${config.judge_role_id ? `<@&${config.judge_role_id}>` : '*Not set*'}`,
