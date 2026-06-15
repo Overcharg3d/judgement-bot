@@ -2001,9 +2001,15 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
     const hasJailRole = newMember.roles.cache.has(config.jail_role_id);
 
     if (hadJailRole && !hasJailRole) {
+    const { rows: stillJailed } = await pool.query(
+        'SELECT id FROM jailed_users WHERE guild_id = $1 AND user_id = $2',
+        [guildId, userId]
+    ).catch(() => ({ rows: [] }));
+    if (stillJailed.length) {
         await newMember.roles.add(config.jail_role_id, 'Jail role re-applied: user still jailed.').catch(e => {
             console.error(`Failed to re-apply jail role for ${userId}:`, e.message);
         });
+    }
     }
 });
 
